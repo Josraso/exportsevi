@@ -53,7 +53,15 @@ class ExportSevi extends Module
             Configuration::updateValue('EXPORTSEVI_FILENAME', 'productos_stock.csv') &&
             Configuration::updateValue('EXPORTSEVI_PRODUCT_STATUS', 'active') &&
             Configuration::updateValue('EXPORTSEVI_BATCH_SIZE', 500) &&
-            Configuration::updateValue('EXPORTSEVI_SECURITY_TOKEN', Tools::passwdGen(32));
+            Configuration::updateValue('EXPORTSEVI_SECURITY_TOKEN', Tools::passwdGen(32)) &&
+            Configuration::updateValue('EXPORTSEVI_EMAIL_NOTIFY', 0) &&
+            Configuration::updateValue('EXPORTSEVI_EMAIL_ADDRESS', Configuration::get('PS_SHOP_EMAIL')) &&
+            Configuration::updateValue('EXPORTSEVI_CSV_DELIMITER', ';') &&
+            Configuration::updateValue('EXPORTSEVI_CSV_ENCODING', 'UTF-8') &&
+            Configuration::updateValue('EXPORTSEVI_FILTER_CATEGORY', '') &&
+            Configuration::updateValue('EXPORTSEVI_FILTER_MANUFACTURER', '') &&
+            Configuration::updateValue('EXPORTSEVI_FILTER_PRICE_MIN', '') &&
+            Configuration::updateValue('EXPORTSEVI_FILTER_PRICE_MAX', '');
     }
 
     public function uninstall()
@@ -67,7 +75,15 @@ class ExportSevi extends Module
             Configuration::deleteByName('EXPORTSEVI_FILENAME') &&
             Configuration::deleteByName('EXPORTSEVI_PRODUCT_STATUS') &&
             Configuration::deleteByName('EXPORTSEVI_BATCH_SIZE') &&
-            Configuration::deleteByName('EXPORTSEVI_SECURITY_TOKEN');
+            Configuration::deleteByName('EXPORTSEVI_SECURITY_TOKEN') &&
+            Configuration::deleteByName('EXPORTSEVI_EMAIL_NOTIFY') &&
+            Configuration::deleteByName('EXPORTSEVI_EMAIL_ADDRESS') &&
+            Configuration::deleteByName('EXPORTSEVI_CSV_DELIMITER') &&
+            Configuration::deleteByName('EXPORTSEVI_CSV_ENCODING') &&
+            Configuration::deleteByName('EXPORTSEVI_FILTER_CATEGORY') &&
+            Configuration::deleteByName('EXPORTSEVI_FILTER_MANUFACTURER') &&
+            Configuration::deleteByName('EXPORTSEVI_FILTER_PRICE_MIN') &&
+            Configuration::deleteByName('EXPORTSEVI_FILTER_PRICE_MAX');
     }
 
     public function getContent()
@@ -80,21 +96,45 @@ class ExportSevi extends Module
             exit;
         }
 
+        // Handle preview request (AJAX)
+        if (Tools::isSubmit('preview_export')) {
+            $this->previewExport();
+            exit;
+        }
+
         if (Tools::isSubmit('submit' . $this->name)) {
             $folder = strval(Tools::getValue('EXPORTSEVI_FOLDER'));
             $filename = strval(Tools::getValue('EXPORTSEVI_FILENAME'));
             $product_status = strval(Tools::getValue('EXPORTSEVI_PRODUCT_STATUS'));
             $batch_size = (int)Tools::getValue('EXPORTSEVI_BATCH_SIZE');
+            $email_notify = (int)Tools::getValue('EXPORTSEVI_EMAIL_NOTIFY');
+            $email_address = strval(Tools::getValue('EXPORTSEVI_EMAIL_ADDRESS'));
+            $csv_delimiter = strval(Tools::getValue('EXPORTSEVI_CSV_DELIMITER'));
+            $csv_encoding = strval(Tools::getValue('EXPORTSEVI_CSV_ENCODING'));
+            $filter_category = strval(Tools::getValue('EXPORTSEVI_FILTER_CATEGORY'));
+            $filter_manufacturer = strval(Tools::getValue('EXPORTSEVI_FILTER_MANUFACTURER'));
+            $filter_price_min = strval(Tools::getValue('EXPORTSEVI_FILTER_PRICE_MIN'));
+            $filter_price_max = strval(Tools::getValue('EXPORTSEVI_FILTER_PRICE_MAX'));
 
             if (!$folder || empty($folder) || !$filename || empty($filename)) {
                 $output .= $this->displayError($this->l('Invalid Configuration value'));
             } elseif ($batch_size < 100 || $batch_size > 5000) {
                 $output .= $this->displayError($this->l('Batch size must be between 100 and 5000'));
+            } elseif ($email_notify && (!$email_address || !Validate::isEmail($email_address))) {
+                $output .= $this->displayError($this->l('Invalid email address'));
             } else {
                 Configuration::updateValue('EXPORTSEVI_FOLDER', $folder);
                 Configuration::updateValue('EXPORTSEVI_FILENAME', $filename);
                 Configuration::updateValue('EXPORTSEVI_PRODUCT_STATUS', $product_status);
                 Configuration::updateValue('EXPORTSEVI_BATCH_SIZE', $batch_size);
+                Configuration::updateValue('EXPORTSEVI_EMAIL_NOTIFY', $email_notify);
+                Configuration::updateValue('EXPORTSEVI_EMAIL_ADDRESS', $email_address);
+                Configuration::updateValue('EXPORTSEVI_CSV_DELIMITER', $csv_delimiter);
+                Configuration::updateValue('EXPORTSEVI_CSV_ENCODING', $csv_encoding);
+                Configuration::updateValue('EXPORTSEVI_FILTER_CATEGORY', $filter_category);
+                Configuration::updateValue('EXPORTSEVI_FILTER_MANUFACTURER', $filter_manufacturer);
+                Configuration::updateValue('EXPORTSEVI_FILTER_PRICE_MIN', $filter_price_min);
+                Configuration::updateValue('EXPORTSEVI_FILTER_PRICE_MAX', $filter_price_max);
                 $output .= $this->displayConfirmation($this->l('Settings updated'));
             }
         }
@@ -116,6 +156,58 @@ class ExportSevi extends Module
         }
 
         return $output . $this->displayForm();
+    }
+
+    private function previewExport()
+    {
+        header('Content-Type: application/json');
+
+        try {
+            // Get first 10 products for preview
+            $products = $this->getProductsData(0, 10);
+
+            if (empty($products)) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => $this->l('No products found with current filters')
+                ]);
+                return;
+            }
+
+            // Get total count (estimate)
+            $all_products = $this->getProductsData(0, 1);
+            $total_estimate = count($this->getProductsData(0, 100)); // Quick estimate
+
+            $headers = [
+                $this->l('Referencias Completas'),
+                $this->l('Referencias Filtradas'),
+                $this->l('Nombre'),
+                $this->l('Stock')
+            ];
+
+            $rows = [];
+            foreach ($products as $product) {
+                $rows[] = [
+                    htmlspecialchars($product['ref_completa']),
+                    htmlspecialchars($product['ref_filtrada']),
+                    htmlspecialchars($product['nombre']),
+                    $product['stock']
+                ];
+            }
+
+            echo json_encode([
+                'success' => true,
+                'headers' => $headers,
+                'rows' => $rows,
+                'total' => $total_estimate . '+'
+            ]);
+
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false,
+                'message' => $e->getMessage()
+            ]);
+        }
     }
 
     private function downloadExportFile($filename)
@@ -144,14 +236,87 @@ class ExportSevi extends Module
         readfile($filepath);
     }
 
+    private function sendNotificationEmail($success, $products_count, $filepath, $execution_time, $message = '')
+    {
+        if (!(int)Configuration::get('EXPORTSEVI_EMAIL_NOTIFY')) {
+            return; // Email notifications disabled
+        }
+
+        $email_address = Configuration::get('EXPORTSEVI_EMAIL_ADDRESS');
+        if (!$email_address || !Validate::isEmail($email_address)) {
+            return; // Invalid email
+        }
+
+        $subject = '[ExportSevi] ' . ($success ? 'Export Completed' : 'Export Failed');
+
+        $template_vars = [
+            '{shop_name}' => Configuration::get('PS_SHOP_NAME'),
+            '{status}' => $success ? 'Success' : 'Failed',
+            '{products_count}' => $products_count,
+            '{filepath}' => $filepath,
+            '{execution_time}' => $execution_time,
+            '{message}' => $message,
+            '{date}' => date('Y-m-d H:i:s')
+        ];
+
+        $message_body = '
+        <html>
+        <body style="font-family: Arial, sans-serif;">
+            <h2 style="color: ' . ($success ? '#4CAF50' : '#f44336') . ';">Export ' . ($success ? 'Completed' : 'Failed') . '</h2>
+            <p><strong>Shop:</strong> {shop_name}</p>
+            <p><strong>Date:</strong> {date}</p>
+            <p><strong>Status:</strong> {status}</p>
+            <p><strong>Products Exported:</strong> {products_count}</p>
+            <p><strong>File Path:</strong> {filepath}</p>
+            <p><strong>Execution Time:</strong> {execution_time} seconds</p>
+            ' . ($message ? '<p><strong>Message:</strong> {message}</p>' : '') . '
+        </body>
+        </html>';
+
+        foreach ($template_vars as $key => $value) {
+            $message_body = str_replace($key, $value, $message_body);
+        }
+
+        Mail::Send(
+            (int)Configuration::get('PS_LANG_DEFAULT'),
+            'exportsevi_notification',
+            $subject,
+            $template_vars,
+            $email_address,
+            null,
+            Configuration::get('PS_SHOP_EMAIL'),
+            Configuration::get('PS_SHOP_NAME'),
+            null,
+            null,
+            dirname(__FILE__) . '/mails/',
+            false,
+            null,
+            null,
+            $message_body
+        );
+    }
+
     public function displayForm()
     {
         // Get form values
         $default_lang = (int)Configuration::get('PS_LANG_DEFAULT');
 
+        // Get categories and manufacturers for selects
+        $categories = Category::getCategories($default_lang, true, false);
+        $categories_list = [['id' => '', 'name' => $this->l('-- All Categories --')]];
+        foreach ($categories as $category) {
+            foreach ($category as $cat) {
+                $categories_list[] = ['id' => $cat['id_category'], 'name' => $cat['name']];
+            }
+        }
+
+        $manufacturers = Manufacturer::getManufacturers(false, $default_lang);
+        $manufacturers_list = [['id_manufacturer' => '', 'name' => $this->l('-- All Manufacturers --')]];
+        $manufacturers_list = array_merge($manufacturers_list, $manufacturers);
+
         $fields_form[0]['form'] = [
             'legend' => [
-                'title' => $this->l('Settings'),
+                'title' => $this->l('Basic Settings'),
             ],
             'input' => [
                 [
@@ -159,7 +324,7 @@ class ExportSevi extends Module
                     'label' => $this->l('Destination Folder'),
                     'name' => 'EXPORTSEVI_FOLDER',
                     'required' => true,
-                    'desc' => $this->l('Full server path (e.g., /var/www/exports/ or /home/user/exports/)'),
+                    'desc' => $this->l('Full server path (e.g., /var/www/exports/)'),
                     'class' => 'fixed-width-xxl'
                 ],
                 [
@@ -170,29 +335,136 @@ class ExportSevi extends Module
                     'desc' => $this->l('Include .csv extension (e.g., productos.csv)')
                 ],
                 [
+                    'type' => 'text',
+                    'label' => $this->l('Batch Size'),
+                    'name' => 'EXPORTSEVI_BATCH_SIZE',
+                    'required' => true,
+                    'desc' => $this->l('Products per batch (100-5000). Lower = less memory.')
+                ]
+            ]
+        ];
+
+        $fields_form[1]['form'] = [
+            'legend' => [
+                'title' => $this->l('CSV Format Options'),
+            ],
+            'input' => [
+                [
                     'type' => 'select',
-                    'label' => $this->l('Product Status'),
-                    'name' => 'EXPORTSEVI_PRODUCT_STATUS',
+                    'label' => $this->l('CSV Delimiter'),
+                    'name' => 'EXPORTSEVI_CSV_DELIMITER',
                     'options' => [
                         'query' => [
-                            ['id' => 'all', 'name' => $this->l('All Products')],
-                            ['id' => 'active', 'name' => $this->l('Only Active Products')],
-                            ['id' => 'inactive', 'name' => $this->l('Only Inactive Products')]
+                            ['id' => ';', 'name' => $this->l('Semicolon') . ' (;)'],
+                            ['id' => ',', 'name' => $this->l('Comma') . ' (,)'],
+                            ['id' => "\t", 'name' => $this->l('Tab')],
+                            ['id' => '|', 'name' => $this->l('Pipe') . ' (|)']
                         ],
                         'id' => 'id',
                         'name' => 'name'
                     ]
                 ],
                 [
+                    'type' => 'select',
+                    'label' => $this->l('Encoding'),
+                    'name' => 'EXPORTSEVI_CSV_ENCODING',
+                    'options' => [
+                        'query' => [
+                            ['id' => 'UTF-8', 'name' => 'UTF-8'],
+                            ['id' => 'ISO-8859-1', 'name' => 'ISO-8859-1 (Latin-1)'],
+                            ['id' => 'Windows-1252', 'name' => 'Windows-1252']
+                        ],
+                        'id' => 'id',
+                        'name' => 'name'
+                    ],
+                    'desc' => $this->l('UTF-8 recommended for international characters')
+                ]
+            ]
+        ];
+
+        $fields_form[2]['form'] = [
+            'legend' => [
+                'title' => $this->l('Product Filters'),
+            ],
+            'input' => [
+                [
+                    'type' => 'select',
+                    'label' => $this->l('Product Status'),
+                    'name' => 'EXPORTSEVI_PRODUCT_STATUS',
+                    'options' => [
+                        'query' => [
+                            ['id' => 'all', 'name' => $this->l('All Products')],
+                            ['id' => 'active', 'name' => $this->l('Only Active')],
+                            ['id' => 'inactive', 'name' => $this->l('Only Inactive')]
+                        ],
+                        'id' => 'id',
+                        'name' => 'name'
+                    ]
+                ],
+                [
+                    'type' => 'select',
+                    'label' => $this->l('Category'),
+                    'name' => 'EXPORTSEVI_FILTER_CATEGORY',
+                    'options' => [
+                        'query' => $categories_list,
+                        'id' => 'id',
+                        'name' => 'name'
+                    ],
+                    'desc' => $this->l('Filter by specific category (optional)')
+                ],
+                [
+                    'type' => 'select',
+                    'label' => $this->l('Manufacturer'),
+                    'name' => 'EXPORTSEVI_FILTER_MANUFACTURER',
+                    'options' => [
+                        'query' => $manufacturers_list,
+                        'id' => 'id_manufacturer',
+                        'name' => 'name'
+                    ],
+                    'desc' => $this->l('Filter by manufacturer (optional)')
+                ],
+                [
                     'type' => 'text',
-                    'label' => $this->l('Batch Size'),
-                    'name' => 'EXPORTSEVI_BATCH_SIZE',
-                    'required' => true,
-                    'desc' => $this->l('Number of products to process per batch (100-5000). Lower values use less memory.')
+                    'label' => $this->l('Min Price'),
+                    'name' => 'EXPORTSEVI_FILTER_PRICE_MIN',
+                    'class' => 'fixed-width-sm',
+                    'desc' => $this->l('Minimum product price (optional)')
+                ],
+                [
+                    'type' => 'text',
+                    'label' => $this->l('Max Price'),
+                    'name' => 'EXPORTSEVI_FILTER_PRICE_MAX',
+                    'class' => 'fixed-width-sm',
+                    'desc' => $this->l('Maximum product price (optional)')
+                ]
+            ]
+        ];
+
+        $fields_form[3]['form'] = [
+            'legend' => [
+                'title' => $this->l('Email Notifications'),
+            ],
+            'input' => [
+                [
+                    'type' => 'switch',
+                    'label' => $this->l('Enable Email Notifications'),
+                    'name' => 'EXPORTSEVI_EMAIL_NOTIFY',
+                    'is_bool' => true,
+                    'values' => [
+                        ['id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')],
+                        ['id' => 'active_off', 'value' => 0, 'label' => $this->l('No')]
+                    ],
+                    'desc' => $this->l('Send email after each export (manual or cron)')
+                ],
+                [
+                    'type' => 'text',
+                    'label' => $this->l('Email Address'),
+                    'name' => 'EXPORTSEVI_EMAIL_ADDRESS',
+                    'desc' => $this->l('Email address to receive notifications')
                 ]
             ],
             'submit' => [
-                'title' => $this->l('Save'),
+                'title' => $this->l('Save Settings'),
                 'class' => 'btn btn-default pull-right'
             ]
         ];
@@ -213,6 +485,14 @@ class ExportSevi extends Module
         $helper->fields_value['EXPORTSEVI_FILENAME'] = Configuration::get('EXPORTSEVI_FILENAME');
         $helper->fields_value['EXPORTSEVI_PRODUCT_STATUS'] = Configuration::get('EXPORTSEVI_PRODUCT_STATUS') ?: 'active';
         $helper->fields_value['EXPORTSEVI_BATCH_SIZE'] = Configuration::get('EXPORTSEVI_BATCH_SIZE') ?: 500;
+        $helper->fields_value['EXPORTSEVI_CSV_DELIMITER'] = Configuration::get('EXPORTSEVI_CSV_DELIMITER') ?: ';';
+        $helper->fields_value['EXPORTSEVI_CSV_ENCODING'] = Configuration::get('EXPORTSEVI_CSV_ENCODING') ?: 'UTF-8';
+        $helper->fields_value['EXPORTSEVI_FILTER_CATEGORY'] = Configuration::get('EXPORTSEVI_FILTER_CATEGORY');
+        $helper->fields_value['EXPORTSEVI_FILTER_MANUFACTURER'] = Configuration::get('EXPORTSEVI_FILTER_MANUFACTURER');
+        $helper->fields_value['EXPORTSEVI_FILTER_PRICE_MIN'] = Configuration::get('EXPORTSEVI_FILTER_PRICE_MIN');
+        $helper->fields_value['EXPORTSEVI_FILTER_PRICE_MAX'] = Configuration::get('EXPORTSEVI_FILTER_PRICE_MAX');
+        $helper->fields_value['EXPORTSEVI_EMAIL_NOTIFY'] = Configuration::get('EXPORTSEVI_EMAIL_NOTIFY');
+        $helper->fields_value['EXPORTSEVI_EMAIL_ADDRESS'] = Configuration::get('EXPORTSEVI_EMAIL_ADDRESS') ?: Configuration::get('PS_SHOP_EMAIL');
 
         $form = $helper->generateForm($fields_form);
 
@@ -235,6 +515,8 @@ class ExportSevi extends Module
         $form .= '<div class="form-wrapper">';
         $form .= '<form method="post" action="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '">';
         $form .= '<div class="form-group">';
+        $form .= '<button type="button" id="preview-btn" class="btn btn-info btn-lg" onclick="showPreview()">';
+        $form .= '<i class="icon-eye"></i> ' . $this->l('Preview (First 10 rows)') . '</button> ';
         $form .= '<button type="submit" name="export_now" class="btn btn-primary btn-lg">';
         $form .= '<i class="icon-download"></i> ' . $this->l('Export Now') . '</button> ';
 
@@ -247,6 +529,7 @@ class ExportSevi extends Module
         }
 
         $form .= '</div>';
+        $form .= '<div id="preview-container" style="display:none; margin-top:15px;"></div>';
         $form .= '</form>';
 
         $form .= '<hr>';
@@ -275,41 +558,132 @@ class ExportSevi extends Module
         // Export history
         $form .= $this->displayExportHistory();
 
-        // Add JavaScript for collapsible folder browser
-        $form .= '<script>
-        function selectFolder(path) {
+        // Add JavaScript and CSS for collapsible folder browser (PrestaShop style)
+        $form .= '
+        <style>
+        .folder-tree { font-family: monospace; line-height: 24px; }
+        .folder-line { display: block; padding: 2px 0; }
+        .folder-toggle {
+            display: inline-block;
+            width: 20px;
+            text-align: center;
+            cursor: pointer;
+            font-weight: bold;
+            color: #555;
+            user-select: none;
+        }
+        .folder-toggle:hover { color: #000; }
+        .folder-name {
+            cursor: pointer;
+            padding: 3px 8px;
+            border-radius: 3px;
+            display: inline-block;
+            transition: all 0.2s;
+        }
+        .folder-name:hover { background: #f0f8ff; }
+        .folder-name.selected { background: #e3f2fd; font-weight: bold; }
+        .folder-children {
+            margin-left: 20px;
+            display: none;
+        }
+        .folder-children.open { display: block; }
+        .folder-writable { color: #4CAF50; }
+        .folder-not-writable { color: #f44336; }
+        </style>
+
+        <script>
+        function selectFolder(path, element) {
             document.getElementsByName("EXPORTSEVI_FOLDER")[0].value = path;
-            // Highlight selected folder
-            var folders = document.querySelectorAll(".folder-name");
-            folders.forEach(function(f) { f.style.backgroundColor = ""; f.style.fontWeight = ""; });
-            event.target.style.backgroundColor = "#e3f2fd";
-            event.target.style.fontWeight = "bold";
+
+            // Remove previous selection
+            var allFolders = document.querySelectorAll(".folder-name");
+            allFolders.forEach(function(f) {
+                f.classList.remove("selected");
+            });
+
+            // Highlight selected
+            element.classList.add("selected");
         }
 
-        function toggleFolder(element) {
-            var content = element.nextElementSibling;
-            var icon = element.querySelector(".folder-icon");
-            
-            if (content.style.display === "none") {
-                content.style.display = "block";
-                icon.className = "folder-icon icon-folder-open";
-                element.innerHTML = element.innerHTML.replace("[+]", "[-]");
+        function toggleFolder(toggleBtn) {
+            var folderLine = toggleBtn.closest(".folder-line");
+            var children = folderLine.querySelector(".folder-children");
+
+            if (!children) return;
+
+            if (children.classList.contains("open")) {
+                // Close
+                children.classList.remove("open");
+                toggleBtn.textContent = "+";
             } else {
-                content.style.display = "none";
-                icon.className = "folder-icon icon-folder";
-                element.innerHTML = element.innerHTML.replace("[-]", "[+]");
+                // Open
+                children.classList.add("open");
+                toggleBtn.textContent = "-";
             }
         }
 
-        // Initialize - close all folders except root
+        // Initialize - set all toggles to + and close all except root
         document.addEventListener("DOMContentLoaded", function() {
-            var folders = document.querySelectorAll(".folder-content");
-            folders.forEach(function(folder, index) {
-                if (index > 0) { // Keep root open
-                    folder.style.display = "none";
+            var allToggles = document.querySelectorAll(".folder-toggle");
+            allToggles.forEach(function(toggle, index) {
+                if (index > 0) { // Keep first (root) open
+                    toggle.textContent = "+";
+                } else {
+                    toggle.textContent = "-";
+                    var folderLine = toggle.closest(".folder-line");
+                    var children = folderLine.querySelector(".folder-children");
+                    if (children) children.classList.add("open");
                 }
             });
         });
+
+        // Preview functionality
+        function showPreview() {
+            var previewBtn = document.getElementById("preview-btn");
+            var previewContainer = document.getElementById("preview-container");
+
+            previewBtn.disabled = true;
+            previewBtn.innerHTML = \'<i class="icon-spinner icon-spin"></i> Loading...\';
+
+            var url = "' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '&preview_export=1";
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        var html = \'<div class="alert alert-success"><strong>Preview:</strong> Showing first 10 rows of export</div>\';
+                        html += \'<div style="overflow-x:auto;"><table class="table table-bordered table-striped">\';
+                        html += \'<thead><tr>\';
+                        data.headers.forEach(function(header) {
+                            html += \'<th>\' + header + \'</th>\';
+                        });
+                        html += \'</tr></thead><tbody>\';
+                        data.rows.forEach(function(row) {
+                            html += \'<tr>\';
+                            row.forEach(function(cell) {
+                                html += \'<td>\' + cell + \'</td>\';
+                            });
+                            html += \'</tr>\';
+                        });
+                        html += \'</tbody></table></div>\';
+                        html += \'<p class="help-block">Total products to export: \' + data.total + \'</p>\';
+
+                        previewContainer.innerHTML = html;
+                        previewContainer.style.display = "block";
+                    } else {
+                        previewContainer.innerHTML = \'<div class="alert alert-danger">\' + data.message + \'</div>\';
+                        previewContainer.style.display = "block";
+                    }
+                })
+                .catch(error => {
+                    previewContainer.innerHTML = \'<div class="alert alert-danger">Error loading preview</div>\';
+                    previewContainer.style.display = "block";
+                })
+                .finally(() => {
+                    previewBtn.disabled = false;
+                    previewBtn.innerHTML = \'<i class="icon-eye"></i> ' . $this->l('Preview (First 10 rows)') . '\';
+                });
+        }
         </script>';
 
         return $form;
@@ -361,12 +735,13 @@ class ExportSevi extends Module
 
     private function getFolderBrowser()
     {
-        $html = '<div style="font-family: monospace;">';
-        $html .= '<div style="margin-bottom: 15px; padding: 10px; background: #e8f4f8; border-left: 4px solid #2196F3;">';
-        $html .= '<strong><i class="icon-info"></i> PrestaShop Directory Structure</strong><br>';
-        $html .= '<small>Click on [+] to expand folders, click on folder names to select as destination</small>';
+        $html = '<div class="alert alert-info">';
+        $html .= '<i class="icon-info-circle"></i> ';
+        $html .= '<strong>' . $this->l('How to use:') . '</strong><br>';
+        $html .= $this->l('Click [+] to expand folders, click on folder names to select as destination');
         $html .= '</div>';
 
+        $html .= '<div class="folder-tree">';
         $base_path = _PS_ROOT_DIR_;
         $html .= $this->listPSDirectories($base_path, 0);
         $html .= '</div>';
@@ -388,84 +763,64 @@ class ExportSevi extends Module
         }
 
         $path = rtrim($path, '/') . '/';
-        $indent = str_repeat('&nbsp;&nbsp;&nbsp;&nbsp;', $level);
-        
-        // Current directory
-        $writable = is_writable($path) ? '✓' : '✗';
-        $style = is_writable($path) ? 'color: #4CAF50;' : 'color: #f44336;';
-        $rel_path = str_replace(_PS_ROOT_DIR_, '', $path);
-        $display_path = $rel_path ?: '/';
         $folder_name = $level === 0 ? 'PrestaShop Root' : basename(rtrim($path, '/'));
+        $writable = is_writable($path);
+        $writable_class = $writable ? 'folder-writable' : 'folder-not-writable';
+        $writable_icon = $writable ? '✓' : '✗';
 
-        // Check if has subdirectories
-        $has_subdirs = false;
+        // Get subdirectories
+        $dirs = [];
         if (is_readable($path)) {
             if ($handle = opendir($path)) {
                 while (($file = readdir($handle)) !== false) {
-                    if ($file != '.' && $file != '..' && is_dir($path . $file) && 
-                        !in_array($file, ['.git', '.svn', 'node_modules', '.idea', '__pycache__'])) {
-                        $has_subdirs = true;
-                        break;
-                    }
-                }
-                closedir($handle);
-            }
-        }
-
-        $html .= '<div class="folder-item">';
-        
-        // Folder toggle and name
-        if ($has_subdirs) {
-            $html .= '<span style="cursor: pointer; padding: 2px 5px; border-radius: 3px; background: #ddd; margin-right: 5px;" onclick="toggleFolder(this)">';
-            $html .= '<i class="folder-icon icon-folder"></i> [+]</span>';
-        } else {
-            $html .= '<span style="margin-right: 25px;"></span>';
-        }
-        
-        $html .= $indent . '<span class="folder-name" style="cursor: pointer; padding: 2px 8px; ' . $style . ' border-radius: 3px;" 
-                  onclick="selectFolder(\'' . addslashes($path) . '\')" 
-                  onmouseover="this.style.backgroundColor=\'#f0f8ff\'" 
-                  onmouseout="if(this.style.fontWeight!=\'bold\') this.style.backgroundColor=\'\'">';
-        
-        $html .= '<i class="icon-folder"></i> ' . $folder_name . ' ' . $writable;
-        $html .= '</span><br>';
-
-        // Subdirectories content (initially hidden)
-        if ($has_subdirs) {
-            $html .= '<div class="folder-content">';
-            
-            $dirs = [];
-            if ($handle = opendir($path)) {
-                while (($file = readdir($handle)) !== false) {
-                    if ($file != '.' && $file != '..' && is_dir($path . $file) && 
+                    if ($file != '.' && $file != '..' && is_dir($path . $file) &&
                         !in_array($file, ['.git', '.svn', 'node_modules', '.idea', '__pycache__'])) {
                         $dirs[] = $file;
                     }
                 }
                 closedir($handle);
-                sort($dirs);
-                
-                // Show common/useful directories first
-                $priority_dirs = ['modules', 'upload', 'download', 'img', 'var', 'cache', 'log', 'exports', 'files'];
-                $sorted_dirs = [];
-                
-                foreach ($priority_dirs as $priority) {
-                    if (in_array($priority, $dirs)) {
-                        $sorted_dirs[] = $priority;
-                        $dirs = array_diff($dirs, [$priority]);
-                    }
-                }
-                $dirs = array_merge($sorted_dirs, $dirs);
-                
-                foreach ($dirs as $dir) {
-                    $html .= $this->listPSDirectories($path . $dir, $level + 1, $max_level);
-                }
             }
-            
+        }
+
+        // Priority directories
+        $priority_dirs = ['modules', 'upload', 'download', 'img', 'var', 'cache', 'log', 'exports', 'files'];
+        $sorted_dirs = [];
+        foreach ($priority_dirs as $priority) {
+            if (in_array($priority, $dirs)) {
+                $sorted_dirs[] = $priority;
+                $dirs = array_diff($dirs, [$priority]);
+            }
+        }
+        sort($dirs);
+        $dirs = array_merge($sorted_dirs, $dirs);
+
+        $has_subdirs = count($dirs) > 0;
+
+        // Start folder line
+        $html .= '<div class="folder-line">';
+
+        // Toggle button (+ or -)
+        if ($has_subdirs) {
+            $html .= '<span class="folder-toggle" onclick="toggleFolder(this)">+</span>';
+        } else {
+            $html .= '<span style="display:inline-block;width:20px;"></span>';
+        }
+
+        // Folder name (clickable to select)
+        $html .= '<span class="folder-name ' . $writable_class . '" onclick="selectFolder(\'' . addslashes($path) . '\', this)">';
+        $html .= '<i class="icon-folder"></i> ' . htmlspecialchars($folder_name) . ' ' . $writable_icon;
+        $html .= '</span>';
+
+        // Subdirectories
+        if ($has_subdirs) {
+            $html .= '<div class="folder-children">';
+            foreach ($dirs as $dir) {
+                $html .= $this->listPSDirectories($path . $dir, $level + 1, $max_level);
+            }
             $html .= '</div>';
         }
-        
-        $html .= '</div>';
+
+        $html .= '</div>'; // End folder-line
 
         return $html;
     }
@@ -486,40 +841,43 @@ class ExportSevi extends Module
                 }
             }
 
-            // Create .htaccess to protect exports folder
-            $htaccess_path = rtrim($folder, '/') . '/.htaccess';
-            if (!file_exists($htaccess_path)) {
-                $htaccess_content = "# Deny web access to export files\n";
-                $htaccess_content .= "Order deny,allow\n";
-                $htaccess_content .= "Deny from all\n";
-                file_put_contents($htaccess_path, $htaccess_content);
-            }
-
-            // Create index.php to prevent directory listing
-            $index_path = rtrim($folder, '/') . '/index.php';
-            if (!file_exists($index_path)) {
-                file_put_contents($index_path, "<?php\nheader('HTTP/1.0 403 Forbidden');\nexit('Access forbidden');\n");
-            }
+            // Note: .htaccess NOT created - CSV files need to be accessible via URL for stock updates
 
             $filepath = rtrim($folder, '/') . '/' . $filename;
+
+            // Get CSV settings
+            $csv_delimiter = Configuration::get('EXPORTSEVI_CSV_DELIMITER') ?: ';';
+            $csv_encoding = Configuration::get('EXPORTSEVI_CSV_ENCODING') ?: 'UTF-8';
 
             // Open file for writing
             $file = fopen($filepath, 'w');
             if (!$file) {
                 $this->logExport(0, $filepath, 'error', 'Cannot create file: ' . $filepath, $export_type);
+                $this->sendNotificationEmail(false, 0, $filepath, 0, 'Cannot create file');
                 return ['success' => false, 'message' => 'Cannot create file: ' . $filepath];
             }
 
-            // Add BOM for Excel compatibility
-            fwrite($file, "\xEF\xBB\xBF");
+            // Add BOM for UTF-8 Excel compatibility
+            if ($csv_encoding === 'UTF-8') {
+                fwrite($file, "\xEF\xBB\xBF");
+            }
 
             // CSV Headers
-            fputcsv($file, [
+            $headers = [
                 'Referencias Completas',
                 'Referencias Filtradas',
                 'Nombre',
                 'Stock'
-            ], ';');
+            ];
+
+            // Convert encoding if needed
+            if ($csv_encoding !== 'UTF-8') {
+                $headers = array_map(function($h) use ($csv_encoding) {
+                    return mb_convert_encoding($h, $csv_encoding, 'UTF-8');
+                }, $headers);
+            }
+
+            fputcsv($file, $headers, $csv_delimiter);
 
             // Get products data with batch processing
             $total_count = 0;
@@ -530,12 +888,21 @@ class ExportSevi extends Module
                 $products = $this->getProductsData($offset, $batch_size);
 
                 foreach ($products as $product) {
-                    fputcsv($file, [
+                    $row = [
                         $product['ref_completa'],
                         $product['ref_filtrada'],
                         $product['nombre'],
                         $product['stock']
-                    ], ';');
+                    ];
+
+                    // Convert encoding if needed
+                    if ($csv_encoding !== 'UTF-8') {
+                        $row = array_map(function($cell) use ($csv_encoding) {
+                            return mb_convert_encoding($cell, $csv_encoding, 'UTF-8');
+                        }, $row);
+                    }
+
+                    fputcsv($file, $row, $csv_delimiter);
                     $total_count++;
                 }
 
@@ -554,13 +921,18 @@ class ExportSevi extends Module
             // Log success
             $this->logExport($total_count, $filepath, 'success', $message, $export_type);
 
+            // Send email notification
+            $this->sendNotificationEmail(true, $total_count, $filepath, $execution_time, $message);
+
             return [
                 'success' => true,
                 'message' => $message
             ];
 
         } catch (Exception $e) {
+            $execution_time = round(microtime(true) - $start_time, 2);
             $this->logExport(0, $folder . '/' . $filename, 'error', $e->getMessage(), $export_type);
+            $this->sendNotificationEmail(false, 0, $folder . '/' . $filename, $execution_time, $e->getMessage());
             return ['success' => false, 'message' => $e->getMessage()];
         }
     }
@@ -597,6 +969,35 @@ class ExportSevi extends Module
                 break;
         }
 
+        // Additional filters
+        $filter_category = (int)Configuration::get('EXPORTSEVI_FILTER_CATEGORY');
+        $filter_manufacturer = (int)Configuration::get('EXPORTSEVI_FILTER_MANUFACTURER');
+        $filter_price_min = (float)Configuration::get('EXPORTSEVI_FILTER_PRICE_MIN');
+        $filter_price_max = (float)Configuration::get('EXPORTSEVI_FILTER_PRICE_MAX');
+
+        $filters_sql = '';
+
+        // Category filter
+        if ($filter_category > 0) {
+            $filters_sql .= ' AND EXISTS (
+                SELECT 1 FROM ' . _DB_PREFIX_ . 'category_product cp
+                WHERE cp.id_product = p.id_product AND cp.id_category = ' . (int)$filter_category . '
+            )';
+        }
+
+        // Manufacturer filter
+        if ($filter_manufacturer > 0) {
+            $filters_sql .= ' AND p.id_manufacturer = ' . (int)$filter_manufacturer;
+        }
+
+        // Price filters
+        if ($filter_price_min > 0) {
+            $filters_sql .= ' AND p.price >= ' . (float)$filter_price_min;
+        }
+        if ($filter_price_max > 0) {
+            $filters_sql .= ' AND p.price <= ' . (float)$filter_price_max;
+        }
+
         // Increase GROUP_CONCAT limit to avoid truncation
         Db::getInstance()->execute('SET SESSION group_concat_max_len = 10000');
 
@@ -614,7 +1015,7 @@ class ExportSevi extends Module
                 FROM ' . _DB_PREFIX_ . 'product p
                 LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ')
                 LEFT JOIN ' . _DB_PREFIX_ . 'stock_available sa ON (p.id_product = sa.id_product AND sa.id_product_attribute = 0)
-                WHERE 1=1 ' . $status_where . '
+                WHERE 1=1 ' . $status_where . $filters_sql . '
                 AND NOT EXISTS (
                     SELECT 1 FROM ' . _DB_PREFIX_ . 'product_attribute pa
                     WHERE pa.id_product = p.id_product
@@ -656,7 +1057,7 @@ class ExportSevi extends Module
                     FROM ' . _DB_PREFIX_ . 'product p
                     LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ')
                     LEFT JOIN ' . _DB_PREFIX_ . 'stock_available sa ON (p.id_product = sa.id_product AND sa.id_product_attribute = 0)
-                    WHERE 1=1 ' . $status_where . '
+                    WHERE 1=1 ' . $status_where . $filters_sql . '
                     AND EXISTS (
                         SELECT 1 FROM ' . _DB_PREFIX_ . 'product_attribute pa
                         WHERE pa.id_product = p.id_product
