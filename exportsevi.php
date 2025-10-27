@@ -369,42 +369,52 @@ class ExportSevi extends Module
             $csv_url = _PS_BASE_URL_ . __PS_BASE_URI__ . ltrim($relative_path, '/') . '/' . $filename;
         }
 
+        // Single unified form with all configuration options
         $fields_form[0]['form'] = [
             'legend' => [
-                'title' => $this->l('Basic Settings'),
+                'title' => $this->l('Export Configuration'),
+                'icon' => 'icon-cogs'
             ],
             'input' => [
+                // === BASIC SETTINGS ===
+                [
+                    'type' => 'html',
+                    'name' => '',
+                    'html_content' => '<h4 style="border-bottom: 2px solid #00aff0; padding-bottom: 5px; margin-top: 0;"><i class="icon-wrench"></i> ' . $this->l('Basic Settings') . '</h4>'
+                ],
                 [
                     'type' => 'text',
                     'label' => $this->l('Destination Folder'),
                     'name' => 'EXPORTSEVI_FOLDER',
                     'required' => true,
                     'desc' => $this->l('Full server path (e.g., /var/www/exports/)') .
-                              ($csv_url ? '<br><strong>CSV URL:</strong> <a href="' . htmlspecialchars($csv_url) . '" target="_blank">' . htmlspecialchars($csv_url) . '</a>' : ''),
-                    'class' => 'fixed-width-xxl'
+                              ($csv_url ? '<br><strong>' . $this->l('CSV URL:') . '</strong> <a href="' . htmlspecialchars($csv_url) . '" target="_blank">' . htmlspecialchars($csv_url) . '</a>' : ''),
+                    'class' => 'folder-input-wide'
                 ],
                 [
                     'type' => 'text',
                     'label' => $this->l('File Name'),
                     'name' => 'EXPORTSEVI_FILENAME',
                     'required' => true,
-                    'desc' => $this->l('Include .csv extension (e.g., productos.csv)')
+                    'desc' => $this->l('Include .csv extension (e.g., productos.csv)'),
+                    'class' => 'fixed-width-lg'
                 ],
                 [
                     'type' => 'text',
                     'label' => $this->l('Batch Size'),
                     'name' => 'EXPORTSEVI_BATCH_SIZE',
                     'required' => true,
-                    'desc' => $this->l('Products per batch (100-5000). Lower = less memory.')
-                ]
-            ]
-        ];
+                    'desc' => $this->l('Products per batch (100-5000). Lower = less memory.'),
+                    'class' => 'fixed-width-sm',
+                    'suffix' => 'products'
+                ],
 
-        $fields_form[1]['form'] = [
-            'legend' => [
-                'title' => $this->l('CSV Format Options'),
-            ],
-            'input' => [
+                // === CSV FORMAT ===
+                [
+                    'type' => 'html',
+                    'name' => '',
+                    'html_content' => '<h4 style="border-bottom: 2px solid #00aff0; padding-bottom: 5px; margin-top: 20px;"><i class="icon-file-text"></i> ' . $this->l('CSV Format Options') . '</h4>'
+                ],
                 [
                     'type' => 'select',
                     'label' => $this->l('CSV Delimiter'),
@@ -434,15 +444,14 @@ class ExportSevi extends Module
                         'name' => 'name'
                     ],
                     'desc' => $this->l('UTF-8 recommended for international characters')
-                ]
-            ]
-        ];
+                ],
 
-        $fields_form[2]['form'] = [
-            'legend' => [
-                'title' => $this->l('Product Filters'),
-            ],
-            'input' => [
+                // === PRODUCT FILTERS ===
+                [
+                    'type' => 'html',
+                    'name' => '',
+                    'html_content' => '<h4 style="border-bottom: 2px solid #00aff0; padding-bottom: 5px; margin-top: 20px;"><i class="icon-filter"></i> ' . $this->l('Product Filters') . ' <small>(' . $this->l('optional') . ')</small></h4>'
+                ],
                 [
                     'type' => 'select',
                     'label' => $this->l('Product Status'),
@@ -468,7 +477,7 @@ class ExportSevi extends Module
                         'id' => 'id',
                         'name' => 'name'
                     ],
-                    'desc' => $this->l('Select one or more categories (optional). Hold Ctrl/Cmd to select multiple.')
+                    'desc' => $this->l('Hold Ctrl/Cmd to select multiple')
                 ],
                 [
                     'type' => 'select',
@@ -481,30 +490,31 @@ class ExportSevi extends Module
                         'id' => 'id_manufacturer',
                         'name' => 'name'
                     ],
-                    'desc' => $this->l('Select one or more manufacturers (optional). Hold Ctrl/Cmd to select multiple.')
+                    'desc' => $this->l('Hold Ctrl/Cmd to select multiple')
                 ],
                 [
                     'type' => 'text',
-                    'label' => $this->l('Min Price'),
+                    'label' => $this->l('Price Range'),
                     'name' => 'EXPORTSEVI_FILTER_PRICE_MIN',
                     'class' => 'fixed-width-sm',
-                    'desc' => $this->l('Minimum product price (optional)')
+                    'desc' => $this->l('Min price (optional)'),
+                    'suffix' => '€'
                 ],
                 [
                     'type' => 'text',
-                    'label' => $this->l('Max Price'),
+                    'label' => $this->l(''),
                     'name' => 'EXPORTSEVI_FILTER_PRICE_MAX',
                     'class' => 'fixed-width-sm',
-                    'desc' => $this->l('Maximum product price (optional)')
-                ]
-            ]
-        ];
+                    'desc' => $this->l('Max price (optional)'),
+                    'suffix' => '€'
+                ],
 
-        $fields_form[3]['form'] = [
-            'legend' => [
-                'title' => $this->l('Email Notifications'),
-            ],
-            'input' => [
+                // === EMAIL NOTIFICATIONS ===
+                [
+                    'type' => 'html',
+                    'name' => '',
+                    'html_content' => '<h4 style="border-bottom: 2px solid #00aff0; padding-bottom: 5px; margin-top: 20px;"><i class="icon-envelope"></i> ' . $this->l('Email Notifications') . '</h4>'
+                ],
                 [
                     'type' => 'switch',
                     'label' => $this->l('Enable Email Notifications'),
@@ -520,7 +530,8 @@ class ExportSevi extends Module
                     'type' => 'text',
                     'label' => $this->l('Email Address'),
                     'name' => 'EXPORTSEVI_EMAIL_ADDRESS',
-                    'desc' => $this->l('Email address to receive notifications')
+                    'desc' => $this->l('Email address to receive notifications'),
+                    'class' => 'fixed-width-lg'
                 ],
                 [
                     'type' => 'text',
@@ -528,12 +539,33 @@ class ExportSevi extends Module
                     'name' => 'EXPORTSEVI_LOG_AUTO_DELETE',
                     'suffix' => 'days',
                     'class' => 'fixed-width-sm',
-                    'desc' => $this->l('Automatically delete export logs older than X days. Set 0 to disable.')
+                    'desc' => $this->l('Set 0 to disable automatic deletion')
+                ],
+
+                // === FOLDER BROWSER (SUB-ACCORDION) ===
+                [
+                    'type' => 'html',
+                    'name' => '',
+                    'html_content' => '
+                        <div style="margin-top: 20px; border: 1px solid #ddd; border-radius: 4px;">
+                            <div id="folder-browser-toggle" style="background: #f8f8f8; padding: 12px; cursor: pointer; border-radius: 4px;">
+                                <i class="icon-folder-open"></i> <strong>' . $this->l('Choose a different folder') . '</strong>
+                                <span class="pull-right"><i class="icon-chevron-right"></i></span>
+                            </div>
+                            <div id="folder-browser-content" style="display: none; padding: 15px; background: #fff; border-top: 1px solid #ddd;">
+                                <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #f8f8f8;">
+                                    ' . $this->getFolderBrowser() . '
+                                </div>
+                                <p class="help-block">' . $this->l('Click on [+] to expand folders, click on folder names to select') . '</p>
+                            </div>
+                        </div>
+                    '
                 ]
             ],
             'submit' => [
-                'title' => $this->l('Save Settings'),
-                'class' => 'btn btn-default pull-right'
+                'title' => $this->l('Save Configuration'),
+                'class' => 'btn btn-primary pull-right',
+                'icon' => 'process-icon-save'
             ]
         ];
 
@@ -574,13 +606,21 @@ class ExportSevi extends Module
         // Check if this is first configuration (no folder set yet)
         $is_first_config = !Configuration::get('EXPORTSEVI_FOLDER');
 
-        // Add CSS for collapsible panels and larger selects
+        // Add CSS for field sizing and UI enhancements
         $form .= '<style>
-        .panel-collapse { display: ' . ($is_first_config ? 'block' : 'none') . '; }
-        .panel-collapse.in { display: block; }
-        .panel-heading { cursor: pointer; }
-        .panel-heading:hover { background: #f5f5f5; }
-        .panel-heading .pull-right { margin-right: 10px; }
+        /* Field size adjustments */
+        input[name="EXPORTSEVI_FOLDER"].folder-input-wide {
+            min-width: 600px !important;
+            max-width: 100% !important;
+        }
+        input[name="EXPORTSEVI_FILENAME"].fixed-width-lg,
+        input[name="EXPORTSEVI_EMAIL_ADDRESS"].fixed-width-lg {
+            width: 350px !important;
+        }
+        input[name="EXPORTSEVI_BATCH_SIZE"].fixed-width-sm,
+        input[name="EXPORTSEVI_LOG_AUTO_DELETE"].fixed-width-sm {
+            width: 100px !important;
+        }
 
         /* Make multiselect boxes larger and more readable */
         select[name="EXPORTSEVI_FILTER_CATEGORY[]"],
@@ -593,26 +633,80 @@ class ExportSevi extends Module
         select[name="EXPORTSEVI_FILTER_MANUFACTURER[]"] option {
             padding: 4px 8px;
         }
+
+        /* Main configuration panel styling */
+        .panel legend {
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s;
+        }
+        .panel legend:hover {
+            background: #f8f8f8;
+        }
+        .panel legend .pull-right {
+            margin-right: 10px;
+            transition: transform 0.2s;
+        }
+
+        /* Folder browser sub-accordion */
+        #folder-browser-toggle {
+            transition: background 0.2s;
+        }
+        #folder-browser-toggle:hover {
+            background: #e8e8e8 !important;
+        }
+        #folder-browser-toggle .pull-right {
+            transition: transform 0.2s;
+        }
+
+        /* Required field indicator */
+        .form-group.required label:after {
+            content: " *";
+            color: #e74c3c;
+            font-weight: bold;
+        }
+
+        /* Section headers within form */
+        .form-wrapper h4 {
+            font-weight: 600;
+            color: #363a41;
+            margin-bottom: 15px;
+        }
+
+        /* Better button spacing */
+        .btn-lg {
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+
+        /* Tooltip styling */
+        [title] {
+            cursor: help;
+        }
+
+        /* Alert styling */
+        .alert {
+            border-left: 4px solid;
+        }
+        .alert-info {
+            border-left-color: #00aff0;
+        }
         </style>';
 
-        // Add JavaScript to make panels collapsible
+        // Add JavaScript for accordion behavior
         $form .= '<script>
         document.addEventListener("DOMContentLoaded", function() {
-            // Make all panels with legend collapsible
-            var legends = document.querySelectorAll(".panel legend");
-            legends.forEach(function(legend, index) {
-                var panel = legend.closest(".panel");
-                if (!panel) return;
-
+            // Main configuration panel - make collapsible
+            var configPanel = document.querySelector(".panel legend");
+            if (configPanel) {
+                var panel = configPanel.closest(".panel");
                 var panelBody = panel.querySelector(".form-wrapper");
-                if (!panelBody) return;
 
-                // Add collapse toggle icon
-                legend.style.cursor = "pointer";
-                legend.innerHTML = \'<span class="pull-right"><i class="icon-chevron-' . ($is_first_config ? 'down' : 'right') . '"></i></span>\' + legend.innerHTML;
+                // Add chevron icon
+                configPanel.innerHTML = \'<span class="pull-right"><i class="icon-chevron-' . ($is_first_config ? 'down' : 'right') . '"></i></span>\' + configPanel.innerHTML;
 
                 // Toggle on click
-                legend.addEventListener("click", function() {
+                configPanel.addEventListener("click", function() {
                     var icon = this.querySelector("i");
                     if (panelBody.style.display === "none") {
                         panelBody.style.display = "block";
@@ -623,100 +717,93 @@ class ExportSevi extends Module
                     }
                 });
 
-                // Collapse all on load (if not first config)
+                // Collapse on load if not first config
                 ' . ($is_first_config ? '' : 'panelBody.style.display = "none";') . '
-            });
+            }
 
-            // Make panels with .panel-heading collapsible (Folder Browser, Export Actions, History)
-            var panelHeadings = document.querySelectorAll(".panel-heading");
-            panelHeadings.forEach(function(heading, index) {
-                var panel = heading.closest(".panel");
-                if (!panel) return;
-
-                // Skip if it already has a legend (already handled above)
-                if (panel.querySelector("legend")) return;
-
-                var panelBody = panel.querySelector(".form-wrapper") || panel.querySelector(".panel-body");
-                if (!panelBody) return;
-
-                // Add collapse toggle icon
-                heading.style.cursor = "pointer";
-                heading.innerHTML = \'<span class="pull-right" style="margin-right: 10px;"><i class="icon-chevron-' . ($is_first_config ? 'down' : 'right') . '"></i></span>\' + heading.innerHTML;
-
-                // Toggle on click
-                heading.addEventListener("click", function() {
+            // Folder browser sub-accordion
+            var folderToggle = document.getElementById("folder-browser-toggle");
+            var folderContent = document.getElementById("folder-browser-content");
+            if (folderToggle && folderContent) {
+                folderToggle.addEventListener("click", function() {
                     var icon = this.querySelector("i");
-                    if (panelBody.style.display === "none") {
-                        panelBody.style.display = "block";
+                    if (folderContent.style.display === "none") {
+                        folderContent.style.display = "block";
                         icon.className = "icon-chevron-down";
                     } else {
-                        panelBody.style.display = "none";
+                        folderContent.style.display = "none";
                         icon.className = "icon-chevron-right";
                     }
                 });
-
-                // Collapse all on load (if not first config)
-                ' . ($is_first_config ? '' : 'panelBody.style.display = "none";') . '
-            });
+            }
         });
         </script>';
 
-        // Add folder browser and manual export section
+        // Export Actions section (always visible)
         $security_token = Configuration::get('EXPORTSEVI_SECURITY_TOKEN');
         $cron_url = _PS_BASE_URL_ . __PS_BASE_URI__ . 'modules/' . $this->name . '/export.php?token=' . $security_token;
         $current_file = Configuration::get('EXPORTSEVI_FILENAME');
 
         $form .= '<div class="panel">';
-        $form .= '<div class="panel-heading"><i class="icon-folder"></i> ' . $this->l('Folder Browser') . '</div>';
+        $form .= '<div class="panel-heading"><i class="icon-play-circle"></i> ' . $this->l('Export Actions') . '</div>';
         $form .= '<div class="form-wrapper">';
-        $form .= '<div id="folder-browser" style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #f8f8f8;">';
-        $form .= $this->getFolderBrowser();
-        $form .= '</div>';
-        $form .= '<p class="help-block">' . $this->l('Click on [+] to expand folders, click on folder names to select') . '</p>';
-        $form .= '</div></div>';
 
-        $form .= '<div class="panel">';
-        $form .= '<div class="panel-heading"><i class="icon-cogs"></i> ' . $this->l('Export Actions') . '</div>';
-        $form .= '<div class="form-wrapper">';
+        // Get last successful export info
+        $last_export_sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'exportsevi_log` WHERE status = "success" ORDER BY export_date DESC LIMIT 1';
+        $last_export = Db::getInstance()->getRow($last_export_sql);
+
+        if ($last_export) {
+            $form .= '<div class="alert alert-info" style="margin-bottom: 15px;">';
+            $form .= '<strong><i class="icon-clock-o"></i> ' . $this->l('Last successful export:') . '</strong> ';
+            $form .= htmlspecialchars($last_export['export_date']) . ' - ';
+            $form .= '<strong>' . (int)$last_export['products_count'] . '</strong> ' . $this->l('products');
+            $form .= ' <span class="badge badge-' . ($last_export['export_type'] === 'manual' ? 'info' : 'default') . '">' . htmlspecialchars($last_export['export_type']) . '</span>';
+            $form .= '</div>';
+        }
+
         $form .= '<form method="post" action="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '">';
         $form .= '<div class="form-group">';
-        $form .= '<button type="button" id="preview-btn" class="btn btn-info btn-lg" onclick="showPreview()">';
-        $form .= '<i class="icon-eye"></i> ' . $this->l('Preview (First 10 rows)') . '</button> ';
-        $form .= '<button type="submit" name="export_now" class="btn btn-primary btn-lg">';
+        $form .= '<button type="button" id="preview-btn" class="btn btn-info btn-lg" onclick="showPreview()" title="' . $this->l('Preview first 10 products before exporting') . '">';
+        $form .= '<i class="icon-eye"></i> ' . $this->l('Preview') . '</button> ';
+        $form .= '<button type="submit" name="export_now" class="btn btn-primary btn-lg" title="' . $this->l('Run export now with current configuration') . '">';
         $form .= '<i class="icon-download"></i> ' . $this->l('Export Now') . '</button> ';
 
         // Download button if file exists
         $folder = Configuration::get('EXPORTSEVI_FOLDER');
         $filepath = rtrim($folder, '/') . '/' . $current_file;
         if (file_exists($filepath)) {
-            $form .= '<a href="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '&download_export=1&file=' . urlencode($current_file) . '" class="btn btn-success btn-lg">';
-            $form .= '<i class="icon-cloud-download"></i> ' . $this->l('Download Last Export') . '</a>';
+            $file_size = round(filesize($filepath) / 1024, 2);
+            $file_date = date('Y-m-d H:i', filemtime($filepath));
+            $form .= '<a href="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '&download_export=1&file=' . urlencode($current_file) . '" class="btn btn-success btn-lg" title="' . $this->l('Size:') . ' ' . $file_size . 'KB - ' . $this->l('Modified:') . ' ' . $file_date . '">';
+            $form .= '<i class="icon-cloud-download"></i> ' . $this->l('Download CSV') . '</a>';
         }
 
         $form .= '</div>';
         $form .= '<div id="preview-container" style="display:none; margin-top:15px;"></div>';
         $form .= '</form>';
 
-        $form .= '<hr>';
+        $form .= '<hr style="margin: 25px 0;">';
+
+        $form .= '<h4 style="margin-top: 0;"><i class="icon-time"></i> ' . $this->l('Automated Exports (Cron)') . '</h4>';
 
         $form .= '<div class="form-group">';
-        $form .= '<label>' . $this->l('Security Token:') . '</label>';
+        $form .= '<label><i class="icon-key"></i> ' . $this->l('Security Token') . '</label>';
         $form .= '<div class="input-group">';
-        $form .= '<input type="text" class="form-control" value="' . htmlspecialchars($security_token) . '" readonly onclick="this.select()">';
+        $form .= '<input type="text" class="form-control" value="' . htmlspecialchars($security_token) . '" readonly onclick="this.select()" title="' . $this->l('Click to select and copy') . '">';
         $form .= '<span class="input-group-btn">';
         $form .= '<form method="post" action="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '" style="display:inline;">';
-        $form .= '<button type="submit" name="regenerate_token" class="btn btn-warning" onclick="return confirm(\'' . $this->l('This will invalidate the current cron URL. Continue?') . '\')">';
+        $form .= '<button type="submit" name="regenerate_token" class="btn btn-warning" onclick="return confirm(\'' . $this->l('This will invalidate the current cron URL. Continue?') . '\')" title="' . $this->l('Generate a new security token') . '">';
         $form .= '<i class="icon-refresh"></i> ' . $this->l('Regenerate') . '</button>';
         $form .= '</form>';
         $form .= '</span>';
         $form .= '</div>';
-        $form .= '<p class="help-block">' . $this->l('Keep this token secret. It\'s required for cron access.') . '</p>';
+        $form .= '<p class="help-block"><i class="icon-info-circle"></i> ' . $this->l('Keep this token secret. It protects your export from unauthorized access.') . '</p>';
         $form .= '</div>';
 
         $form .= '<div class="form-group">';
-        $form .= '<label>' . $this->l('Cron URL:') . '</label>';
-        $form .= '<input type="text" class="form-control" value="' . htmlspecialchars($cron_url) . '" readonly onclick="this.select()">';
-        $form .= '<p class="help-block">' . $this->l('Use this URL in your cron job for automatic exports. Example:') . '<br><code>0 2 * * * curl -s "' . htmlspecialchars($cron_url) . '"</code></p>';
+        $form .= '<label><i class="icon-link"></i> ' . $this->l('Cron URL') . '</label>';
+        $form .= '<input type="text" class="form-control" value="' . htmlspecialchars($cron_url) . '" readonly onclick="this.select()" title="' . $this->l('Click to select and copy') . '">';
+        $form .= '<p class="help-block"><i class="icon-info-circle"></i> ' . $this->l('Use this URL in your server cron job. Example (runs daily at 2 AM):') . '<br><code style="background: #f5f5f5; padding: 8px; display: block; margin-top: 5px; border-radius: 3px;">0 2 * * * curl -s "' . htmlspecialchars($cron_url) . '"</code></p>';
         $form .= '</div>';
         $form .= '</div></div>';
 
