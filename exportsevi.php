@@ -61,7 +61,8 @@ class ExportSevi extends Module
             Configuration::updateValue('EXPORTSEVI_FILTER_CATEGORY', '') &&
             Configuration::updateValue('EXPORTSEVI_FILTER_MANUFACTURER', '') &&
             Configuration::updateValue('EXPORTSEVI_FILTER_PRICE_MIN', '') &&
-            Configuration::updateValue('EXPORTSEVI_FILTER_PRICE_MAX', '');
+            Configuration::updateValue('EXPORTSEVI_FILTER_PRICE_MAX', '') &&
+            Configuration::updateValue('EXPORTSEVI_LOG_AUTO_DELETE', 30); // 30 days
     }
 
     public function uninstall()
@@ -83,7 +84,8 @@ class ExportSevi extends Module
             Configuration::deleteByName('EXPORTSEVI_FILTER_CATEGORY') &&
             Configuration::deleteByName('EXPORTSEVI_FILTER_MANUFACTURER') &&
             Configuration::deleteByName('EXPORTSEVI_FILTER_PRICE_MIN') &&
-            Configuration::deleteByName('EXPORTSEVI_FILTER_PRICE_MAX');
+            Configuration::deleteByName('EXPORTSEVI_FILTER_PRICE_MAX') &&
+            Configuration::deleteByName('EXPORTSEVI_LOG_AUTO_DELETE');
     }
 
     public function getContent()
@@ -102,6 +104,16 @@ class ExportSevi extends Module
             exit;
         }
 
+        // Handle delete logs
+        if (Tools::isSubmit('delete_logs')) {
+            $sql = 'DELETE FROM `' . _DB_PREFIX_ . 'exportsevi_log`';
+            if (Db::getInstance()->execute($sql)) {
+                $output .= $this->displayConfirmation($this->l('All logs deleted successfully'));
+            } else {
+                $output .= $this->displayError($this->l('Error deleting logs'));
+            }
+        }
+
         if (Tools::isSubmit('submit' . $this->name)) {
             $folder = strval(Tools::getValue('EXPORTSEVI_FOLDER'));
             $filename = strval(Tools::getValue('EXPORTSEVI_FILENAME'));
@@ -111,10 +123,18 @@ class ExportSevi extends Module
             $email_address = strval(Tools::getValue('EXPORTSEVI_EMAIL_ADDRESS'));
             $csv_delimiter = strval(Tools::getValue('EXPORTSEVI_CSV_DELIMITER'));
             $csv_encoding = strval(Tools::getValue('EXPORTSEVI_CSV_ENCODING'));
-            $filter_category = strval(Tools::getValue('EXPORTSEVI_FILTER_CATEGORY'));
-            $filter_manufacturer = strval(Tools::getValue('EXPORTSEVI_FILTER_MANUFACTURER'));
+
+            // Get multiple categories and manufacturers as arrays
+            $filter_categories = Tools::getValue('EXPORTSEVI_FILTER_CATEGORY');
+            $filter_manufacturers = Tools::getValue('EXPORTSEVI_FILTER_MANUFACTURER');
+
+            // Convert to comma-separated string for storage
+            $filter_category = is_array($filter_categories) ? implode(',', array_filter($filter_categories)) : '';
+            $filter_manufacturer = is_array($filter_manufacturers) ? implode(',', array_filter($filter_manufacturers)) : '';
+
             $filter_price_min = strval(Tools::getValue('EXPORTSEVI_FILTER_PRICE_MIN'));
             $filter_price_max = strval(Tools::getValue('EXPORTSEVI_FILTER_PRICE_MAX'));
+            $log_auto_delete = (int)Tools::getValue('EXPORTSEVI_LOG_AUTO_DELETE');
 
             if (!$folder || empty($folder) || !$filename || empty($filename)) {
                 $output .= $this->displayError($this->l('Invalid Configuration value'));
@@ -135,6 +155,7 @@ class ExportSevi extends Module
                 Configuration::updateValue('EXPORTSEVI_FILTER_MANUFACTURER', $filter_manufacturer);
                 Configuration::updateValue('EXPORTSEVI_FILTER_PRICE_MIN', $filter_price_min);
                 Configuration::updateValue('EXPORTSEVI_FILTER_PRICE_MAX', $filter_price_max);
+                Configuration::updateValue('EXPORTSEVI_LOG_AUTO_DELETE', $log_auto_delete);
                 $output .= $this->displayConfirmation($this->l('Settings updated'));
             }
         }
@@ -249,51 +270,29 @@ class ExportSevi extends Module
 
         $subject = '[ExportSevi] ' . ($success ? 'Export Completed' : 'Export Failed');
 
-        $template_vars = [
-            '{shop_name}' => Configuration::get('PS_SHOP_NAME'),
-            '{status}' => $success ? 'Success' : 'Failed',
-            '{products_count}' => $products_count,
-            '{filepath}' => $filepath,
-            '{execution_time}' => $execution_time,
-            '{message}' => $message,
-            '{date}' => date('Y-m-d H:i:s')
-        ];
-
         $message_body = '
         <html>
-        <body style="font-family: Arial, sans-serif;">
+        <head><meta charset="UTF-8"></head>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
             <h2 style="color: ' . ($success ? '#4CAF50' : '#f44336') . ';">Export ' . ($success ? 'Completed' : 'Failed') . '</h2>
-            <p><strong>Shop:</strong> {shop_name}</p>
-            <p><strong>Date:</strong> {date}</p>
-            <p><strong>Status:</strong> {status}</p>
-            <p><strong>Products Exported:</strong> {products_count}</p>
-            <p><strong>File Path:</strong> {filepath}</p>
-            <p><strong>Execution Time:</strong> {execution_time} seconds</p>
-            ' . ($message ? '<p><strong>Message:</strong> {message}</p>' : '') . '
+            <table style="border-collapse: collapse; width: 100%; max-width: 600px;">
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Shop:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . Configuration::get('PS_SHOP_NAME') . '</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Date:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . date('Y-m-d H:i:s') . '</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Status:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: ' . ($success ? '#4CAF50' : '#f44336') . ';"><strong>' . ($success ? 'SUCCESS' : 'FAILED') . '</strong></td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Products:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . $products_count . '</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>File:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . htmlspecialchars($filepath) . '</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Time:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . $execution_time . ' seconds</td></tr>
+                ' . ($message ? '<tr><td style="padding: 8px;"><strong>Message:</strong></td><td style="padding: 8px;">' . htmlspecialchars($message) . '</td></tr>' : '') . '
+            </table>
         </body>
         </html>';
 
-        foreach ($template_vars as $key => $value) {
-            $message_body = str_replace($key, $value, $message_body);
-        }
+        // Use PHP mail() directly for better reliability
+        $headers = "MIME-Version: 1.0" . "\r\n";
+        $headers .= "Content-type:text/html;charset=UTF-8" . "\r\n";
+        $headers .= 'From: ' . Configuration::get('PS_SHOP_NAME') . ' <' . Configuration::get('PS_SHOP_EMAIL') . '>' . "\r\n";
 
-        Mail::Send(
-            (int)Configuration::get('PS_LANG_DEFAULT'),
-            'exportsevi_notification',
-            $subject,
-            $template_vars,
-            $email_address,
-            null,
-            Configuration::get('PS_SHOP_EMAIL'),
-            Configuration::get('PS_SHOP_NAME'),
-            null,
-            null,
-            dirname(__FILE__) . '/mails/',
-            false,
-            null,
-            null,
-            $message_body
-        );
+        @mail($email_address, $subject, $message_body, $headers);
     }
 
     public function displayForm()
@@ -339,6 +338,16 @@ class ExportSevi extends Module
             }
         }
 
+        // Calculate CSV URL
+        $folder = Configuration::get('EXPORTSEVI_FOLDER');
+        $filename = Configuration::get('EXPORTSEVI_FILENAME');
+        $csv_url = '';
+
+        if ($folder && $filename) {
+            $relative_path = str_replace(_PS_ROOT_DIR_, '', $folder);
+            $csv_url = _PS_BASE_URL_ . __PS_BASE_URI__ . ltrim($relative_path, '/') . '/' . $filename;
+        }
+
         $fields_form[0]['form'] = [
             'legend' => [
                 'title' => $this->l('Basic Settings'),
@@ -349,7 +358,8 @@ class ExportSevi extends Module
                     'label' => $this->l('Destination Folder'),
                     'name' => 'EXPORTSEVI_FOLDER',
                     'required' => true,
-                    'desc' => $this->l('Full server path (e.g., /var/www/exports/)'),
+                    'desc' => $this->l('Full server path (e.g., /var/www/exports/)') .
+                              ($csv_url ? '<br><strong>CSV URL:</strong> <a href="' . htmlspecialchars($csv_url) . '" target="_blank">' . htmlspecialchars($csv_url) . '</a>' : ''),
                     'class' => 'fixed-width-xxl'
                 ],
                 [
@@ -428,25 +438,27 @@ class ExportSevi extends Module
                 ],
                 [
                     'type' => 'select',
-                    'label' => $this->l('Category'),
+                    'label' => $this->l('Categories'),
                     'name' => 'EXPORTSEVI_FILTER_CATEGORY',
+                    'multiple' => true,
                     'options' => [
                         'query' => $categories_list,
                         'id' => 'id',
                         'name' => 'name'
                     ],
-                    'desc' => $this->l('Filter by specific category (optional)')
+                    'desc' => $this->l('Select one or more categories (optional). Hold Ctrl/Cmd to select multiple.')
                 ],
                 [
                     'type' => 'select',
-                    'label' => $this->l('Manufacturer'),
+                    'label' => $this->l('Manufacturers'),
                     'name' => 'EXPORTSEVI_FILTER_MANUFACTURER',
+                    'multiple' => true,
                     'options' => [
                         'query' => $manufacturers_list,
                         'id' => 'id_manufacturer',
                         'name' => 'name'
                     ],
-                    'desc' => $this->l('Filter by manufacturer (optional)')
+                    'desc' => $this->l('Select one or more manufacturers (optional). Hold Ctrl/Cmd to select multiple.')
                 ],
                 [
                     'type' => 'text',
@@ -486,6 +498,14 @@ class ExportSevi extends Module
                     'label' => $this->l('Email Address'),
                     'name' => 'EXPORTSEVI_EMAIL_ADDRESS',
                     'desc' => $this->l('Email address to receive notifications')
+                ],
+                [
+                    'type' => 'text',
+                    'label' => $this->l('Auto-delete logs after'),
+                    'name' => 'EXPORTSEVI_LOG_AUTO_DELETE',
+                    'suffix' => 'days',
+                    'class' => 'fixed-width-sm',
+                    'desc' => $this->l('Automatically delete export logs older than X days. Set 0 to disable.')
                 ]
             ],
             'submit' => [
@@ -512,14 +532,67 @@ class ExportSevi extends Module
         $helper->fields_value['EXPORTSEVI_BATCH_SIZE'] = Configuration::get('EXPORTSEVI_BATCH_SIZE') ?: 500;
         $helper->fields_value['EXPORTSEVI_CSV_DELIMITER'] = Configuration::get('EXPORTSEVI_CSV_DELIMITER') ?: ';';
         $helper->fields_value['EXPORTSEVI_CSV_ENCODING'] = Configuration::get('EXPORTSEVI_CSV_ENCODING') ?: 'UTF-8';
-        $helper->fields_value['EXPORTSEVI_FILTER_CATEGORY'] = Configuration::get('EXPORTSEVI_FILTER_CATEGORY');
-        $helper->fields_value['EXPORTSEVI_FILTER_MANUFACTURER'] = Configuration::get('EXPORTSEVI_FILTER_MANUFACTURER');
+
+        // Convert comma-separated strings to arrays for multiselect
+        $filter_categories = Configuration::get('EXPORTSEVI_FILTER_CATEGORY');
+        $helper->fields_value['EXPORTSEVI_FILTER_CATEGORY'] = $filter_categories ? explode(',', $filter_categories) : [];
+
+        $filter_manufacturers = Configuration::get('EXPORTSEVI_FILTER_MANUFACTURER');
+        $helper->fields_value['EXPORTSEVI_FILTER_MANUFACTURER'] = $filter_manufacturers ? explode(',', $filter_manufacturers) : [];
+
         $helper->fields_value['EXPORTSEVI_FILTER_PRICE_MIN'] = Configuration::get('EXPORTSEVI_FILTER_PRICE_MIN');
         $helper->fields_value['EXPORTSEVI_FILTER_PRICE_MAX'] = Configuration::get('EXPORTSEVI_FILTER_PRICE_MAX');
         $helper->fields_value['EXPORTSEVI_EMAIL_NOTIFY'] = Configuration::get('EXPORTSEVI_EMAIL_NOTIFY');
         $helper->fields_value['EXPORTSEVI_EMAIL_ADDRESS'] = Configuration::get('EXPORTSEVI_EMAIL_ADDRESS') ?: Configuration::get('PS_SHOP_EMAIL');
+        $helper->fields_value['EXPORTSEVI_LOG_AUTO_DELETE'] = Configuration::get('EXPORTSEVI_LOG_AUTO_DELETE') ?: 30;
 
         $form = $helper->generateForm($fields_form);
+
+        // Check if this is first configuration (no folder set yet)
+        $is_first_config = !Configuration::get('EXPORTSEVI_FOLDER');
+
+        // Add CSS for collapsible panels
+        $form .= '<style>
+        .panel-collapse { display: ' . ($is_first_config ? 'block' : 'none') . '; }
+        .panel-collapse.in { display: block; }
+        .panel-heading { cursor: pointer; }
+        .panel-heading:hover { background: #f5f5f5; }
+        .panel-heading .pull-right { margin-right: 10px; }
+        </style>';
+
+        // Add JavaScript to make panels collapsible
+        $form .= '<script>
+        document.addEventListener("DOMContentLoaded", function() {
+            // Make all panels with legend collapsible
+            var legends = document.querySelectorAll(".panel legend");
+            legends.forEach(function(legend, index) {
+                var panel = legend.closest(".panel");
+                if (!panel) return;
+
+                var panelBody = panel.querySelector(".form-wrapper");
+                if (!panelBody) return;
+
+                // Add collapse toggle icon
+                legend.style.cursor = "pointer";
+                legend.innerHTML = \'<span class="pull-right"><i class="icon-chevron-' . ($is_first_config ? 'down' : 'right') . '"></i></span>\' + legend.innerHTML;
+
+                // Toggle on click
+                legend.addEventListener("click", function() {
+                    var icon = this.querySelector("i");
+                    if (panelBody.style.display === "none") {
+                        panelBody.style.display = "block";
+                        icon.className = "icon-chevron-down";
+                    } else {
+                        panelBody.style.display = "none";
+                        icon.className = "icon-chevron-right";
+                    }
+                });
+
+                // Collapse all except first on load (if not first config)
+                ' . ($is_first_config ? '' : 'if (index > 0) { panelBody.style.display = "none"; }') . '
+            });
+        });
+        </script>';
 
         // Add folder browser and manual export section
         $security_token = Configuration::get('EXPORTSEVI_SECURITY_TOKEN');
@@ -724,6 +797,11 @@ class ExportSevi extends Module
         $sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'exportsevi_log` ORDER BY export_date DESC LIMIT 10';
         $logs = Db::getInstance()->executeS($sql);
 
+        // Get total count
+        $total_sql = 'SELECT COUNT(*) as total FROM `' . _DB_PREFIX_ . 'exportsevi_log`';
+        $total_result = Db::getInstance()->getRow($total_sql);
+        $total_logs = $total_result ? $total_result['total'] : 0;
+
         if ($logs && count($logs) > 0) {
             $html .= '<table class="table">';
             $html .= '<thead><tr>';
@@ -749,6 +827,16 @@ class ExportSevi extends Module
             }
 
             $html .= '</tbody></table>';
+
+            // Add delete logs button
+            $html .= '<div class="form-group">';
+            $html .= '<p class="help-block">' . sprintf($this->l('Showing last 10 of %d total logs'), $total_logs) . '</p>';
+            $html .= '<form method="post" action="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '" onsubmit="return confirm(\'' . $this->l('Are you sure you want to delete all export logs?') . '\')">';
+            $html .= '<button type="submit" name="delete_logs" class="btn btn-danger">';
+            $html .= '<i class="icon-trash"></i> ' . $this->l('Delete All Logs');
+            $html .= '</button>';
+            $html .= '</form>';
+            $html .= '</div>';
         } else {
             $html .= '<p class="alert alert-info">' . $this->l('No exports yet.') . '</p>';
         }
@@ -853,6 +941,14 @@ class ExportSevi extends Module
     public function executeExport($export_type = 'manual')
     {
         $start_time = microtime(true);
+
+        // Auto-delete old logs
+        $auto_delete_days = (int)Configuration::get('EXPORTSEVI_LOG_AUTO_DELETE');
+        if ($auto_delete_days > 0) {
+            $sql = 'DELETE FROM `' . _DB_PREFIX_ . 'exportsevi_log`
+                    WHERE export_date < DATE_SUB(NOW(), INTERVAL ' . (int)$auto_delete_days . ' DAY)';
+            Db::getInstance()->execute($sql);
+        }
 
         try {
             $folder = Configuration::get('EXPORTSEVI_FOLDER');
@@ -994,25 +1090,31 @@ class ExportSevi extends Module
                 break;
         }
 
-        // Additional filters
-        $filter_category = (int)Configuration::get('EXPORTSEVI_FILTER_CATEGORY');
-        $filter_manufacturer = (int)Configuration::get('EXPORTSEVI_FILTER_MANUFACTURER');
+        // Additional filters - support multiple categories and manufacturers
+        $filter_categories = Configuration::get('EXPORTSEVI_FILTER_CATEGORY');
+        $filter_manufacturers = Configuration::get('EXPORTSEVI_FILTER_MANUFACTURER');
         $filter_price_min = (float)Configuration::get('EXPORTSEVI_FILTER_PRICE_MIN');
         $filter_price_max = (float)Configuration::get('EXPORTSEVI_FILTER_PRICE_MAX');
 
         $filters_sql = '';
 
-        // Category filter
-        if ($filter_category > 0) {
-            $filters_sql .= ' AND EXISTS (
-                SELECT 1 FROM ' . _DB_PREFIX_ . 'category_product cp
-                WHERE cp.id_product = p.id_product AND cp.id_category = ' . (int)$filter_category . '
-            )';
+        // Category filter (multiple)
+        if ($filter_categories) {
+            $category_ids = array_filter(array_map('intval', explode(',', $filter_categories)));
+            if (!empty($category_ids)) {
+                $filters_sql .= ' AND EXISTS (
+                    SELECT 1 FROM ' . _DB_PREFIX_ . 'category_product cp
+                    WHERE cp.id_product = p.id_product AND cp.id_category IN (' . implode(',', $category_ids) . ')
+                )';
+            }
         }
 
-        // Manufacturer filter
-        if ($filter_manufacturer > 0) {
-            $filters_sql .= ' AND p.id_manufacturer = ' . (int)$filter_manufacturer;
+        // Manufacturer filter (multiple)
+        if ($filter_manufacturers) {
+            $manufacturer_ids = array_filter(array_map('intval', explode(',', $filter_manufacturers)));
+            if (!empty($manufacturer_ids)) {
+                $filters_sql .= ' AND p.id_manufacturer IN (' . implode(',', $manufacturer_ids) . ')';
+            }
         }
 
         // Price filters
