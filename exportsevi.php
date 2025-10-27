@@ -600,64 +600,124 @@ class ExportSevi extends Module
         // Increase GROUP_CONCAT limit to avoid truncation
         Db::getInstance()->execute('SET SESSION group_concat_max_len = 10000');
 
-        // Optimized query with UNION: Simple products + Combinations in one query
-        $sql = '
-        (
-            SELECT
-                p.reference as ref_completa,
-                p.reference as ref_filtrada,
-                pl.name as nombre,
-                IFNULL(sa.quantity, 0) as stock,
-                p.id_product,
-                0 as id_product_attribute
-            FROM ' . _DB_PREFIX_ . 'product p
-            LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ')
-            LEFT JOIN ' . _DB_PREFIX_ . 'stock_available sa ON (p.id_product = sa.id_product AND sa.id_product_attribute = 0)
-            WHERE 1=1 ' . $status_where . '
-            AND NOT EXISTS (
-                SELECT 1 FROM ' . _DB_PREFIX_ . 'product_attribute pa
-                WHERE pa.id_product = p.id_product
-            )
-        )
-        UNION ALL
-        (
-            SELECT
-                p.reference as ref_completa,
-                pa.reference as ref_filtrada,
-                CONCAT(pl.name, " - ",
-                    GROUP_CONCAT(
-                        CONCAT(agl.name, ": ", al.name)
-                        ORDER BY a.id_attribute_group, a.position
-                        SEPARATOR " - "
-                    )
-                ) as nombre,
-                IFNULL(sa.quantity, 0) as stock,
-                p.id_product,
-                pa.id_product_attribute
-            FROM ' . _DB_PREFIX_ . 'product p
-            LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ')
-            INNER JOIN ' . _DB_PREFIX_ . 'product_attribute pa ON p.id_product = pa.id_product
-            LEFT JOIN ' . _DB_PREFIX_ . 'stock_available sa ON (pa.id_product = sa.id_product AND pa.id_product_attribute = sa.id_product_attribute)
-            LEFT JOIN ' . _DB_PREFIX_ . 'product_attribute_combination pac ON pa.id_product_attribute = pac.id_product_attribute
-            LEFT JOIN ' . _DB_PREFIX_ . 'attribute a ON pac.id_attribute = a.id_attribute
-            LEFT JOIN ' . _DB_PREFIX_ . 'attribute_lang al ON (a.id_attribute = al.id_attribute AND al.id_lang = ' . (int)$id_lang . ')
-            LEFT JOIN ' . _DB_PREFIX_ . 'attribute_group_lang agl ON (a.id_attribute_group = agl.id_attribute_group AND agl.id_lang = ' . (int)$id_lang . ')
-            WHERE 1=1 ' . $status_where . '
-            GROUP BY pa.id_product_attribute
-        )
-        ORDER BY id_product, id_product_attribute
-        LIMIT ' . (int)$offset . ', ' . (int)$limit;
+        // Calculate items already added to manage offset properly
+        $items_added = 0;
+        $items_to_skip = $offset;
+        $items_to_return = $limit;
 
-        $data = Db::getInstance()->executeS($sql);
+        // First: Get simple products (without combinations)
+        $simple_products = 'SELECT
+                    p.id_product,
+                    p.reference as product_reference,
+                    pl.name as product_name,
+                    sa.quantity as stock
+                FROM ' . _DB_PREFIX_ . 'product p
+                LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ')
+                LEFT JOIN ' . _DB_PREFIX_ . 'stock_available sa ON (p.id_product = sa.id_product AND sa.id_product_attribute = 0)
+                WHERE 1=1 ' . $status_where . '
+                AND NOT EXISTS (
+                    SELECT 1 FROM ' . _DB_PREFIX_ . 'product_attribute pa
+                    WHERE pa.id_product = p.id_product
+                )
+                ORDER BY p.id_product';
 
-        if ($data) {
-            foreach ($data as $row) {
+        $simple_data = Db::getInstance()->executeS($simple_products);
+
+        if ($simple_data) {
+            foreach ($simple_data as $row) {
+                // Skip items until we reach offset
+                if ($items_to_skip > 0) {
+                    $items_to_skip--;
+                    continue;
+                }
+
+                // Stop if we've reached the limit
+                if ($items_added >= $items_to_return) {
+                    break;
+                }
+
                 $results[] = [
-                    'ref_completa' => $row['ref_completa'] ?: '',
-                    'ref_filtrada' => $row['ref_filtrada'] ?: '',
-                    'nombre' => $row['nombre'] ?: '',
+                    'ref_completa' => $row['product_reference'],
+                    'ref_filtrada' => $row['product_reference'],
+                    'nombre' => $row['product_name'],
                     'stock' => (int)$row['stock']
                 ];
+                $items_added++;
+            }
+        }
+
+        // If we still need more items, get products with combinations
+        if ($items_added < $items_to_return) {
+            $products_with_combinations = 'SELECT DISTINCT
+                        p.id_product,
+                        p.reference as product_reference,
+                        pl.name as product_name,
+                        sa.quantity as stock
+                    FROM ' . _DB_PREFIX_ . 'product p
+                    LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ')
+                    LEFT JOIN ' . _DB_PREFIX_ . 'stock_available sa ON (p.id_product = sa.id_product AND sa.id_product_attribute = 0)
+                    WHERE 1=1 ' . $status_where . '
+                    AND EXISTS (
+                        SELECT 1 FROM ' . _DB_PREFIX_ . 'product_attribute pa
+                        WHERE pa.id_product = p.id_product
+                    )
+                    ORDER BY p.id_product';
+
+            $parent_data = Db::getInstance()->executeS($products_with_combinations);
+
+            if ($parent_data) {
+                foreach ($parent_data as $row) {
+                    // Stop if we've reached the limit
+                    if ($items_added >= $items_to_return) {
+                        break;
+                    }
+
+                    // Get combinations for this product
+                    $combinations_sql = 'SELECT
+                                pa.reference as combination_reference,
+                                sa.quantity as stock,
+                                GROUP_CONCAT(CONCAT(agl.name, ": ", al.name) ORDER BY a.id_attribute_group, a.position SEPARATOR " - ") as attributes
+                            FROM ' . _DB_PREFIX_ . 'product_attribute pa
+                            LEFT JOIN ' . _DB_PREFIX_ . 'stock_available sa ON (pa.id_product = sa.id_product AND pa.id_product_attribute = sa.id_product_attribute)
+                            LEFT JOIN ' . _DB_PREFIX_ . 'product_attribute_combination pac ON pa.id_product_attribute = pac.id_product_attribute
+                            LEFT JOIN ' . _DB_PREFIX_ . 'attribute a ON pac.id_attribute = a.id_attribute
+                            LEFT JOIN ' . _DB_PREFIX_ . 'attribute_lang al ON (a.id_attribute = al.id_attribute AND al.id_lang = ' . (int)$id_lang . ')
+                            LEFT JOIN ' . _DB_PREFIX_ . 'attribute_group_lang agl ON (a.id_attribute_group = agl.id_attribute_group AND agl.id_lang = ' . (int)$id_lang . ')
+                            WHERE pa.id_product = ' . (int)$row['id_product'] . '
+                            GROUP BY pa.id_product_attribute
+                            ORDER BY pa.id_product_attribute';
+
+                    $combinations_data = Db::getInstance()->executeS($combinations_sql);
+
+                    if ($combinations_data) {
+                        foreach ($combinations_data as $comb) {
+                            // Skip items until we reach offset
+                            if ($items_to_skip > 0) {
+                                $items_to_skip--;
+                                continue;
+                            }
+
+                            // Stop if we've reached the limit
+                            if ($items_added >= $items_to_return) {
+                                break 2; // Break both foreach loops
+                            }
+
+                            $combination_name = $row['product_name'];
+                            if (!empty($comb['attributes'])) {
+                                $combination_name .= ' - ' . $comb['attributes'];
+                            }
+
+                            // SOLO las combinaciones: referencia padre en columna 1, combinación en columna 2
+                            $results[] = [
+                                'ref_completa' => $row['product_reference'], // Referencia padre repetida
+                                'ref_filtrada' => $comb['combination_reference'], // Referencia de combinación
+                                'nombre' => $combination_name,
+                                'stock' => (int)$comb['stock']
+                            ];
+                            $items_added++;
+                        }
+                    }
+                }
             }
         }
 
