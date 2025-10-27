@@ -749,7 +749,7 @@ class ExportSevi extends Module
         $form .= '<div class="form-wrapper">';
 
         // Get last successful export info
-        $last_export_sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'exportsevi_log` WHERE status = "success" ORDER BY export_date DESC LIMIT 1';
+        $last_export_sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'exportsevi_log` WHERE status = \'success\' ORDER BY export_date DESC LIMIT 1';
         $last_export = Db::getInstance()->getRow($last_export_sql);
 
         if ($last_export) {
