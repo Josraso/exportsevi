@@ -302,17 +302,42 @@ class ExportSevi extends Module
         $default_lang = (int)Configuration::get('PS_LANG_DEFAULT');
 
         // Get categories and manufacturers for selects
-        $categories = Category::getCategories($default_lang, true, false);
         $categories_list = [['id' => '', 'name' => $this->l('-- All Categories --')]];
-        foreach ($categories as $category) {
-            foreach ($category as $cat) {
-                $categories_list[] = ['id' => $cat['id_category'], 'name' => $cat['name']];
+
+        // Get categories using direct SQL query
+        $sql_categories = 'SELECT c.id_category, cl.name
+                          FROM ' . _DB_PREFIX_ . 'category c
+                          LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl ON (c.id_category = cl.id_category AND cl.id_lang = ' . (int)$default_lang . ')
+                          WHERE c.active = 1 AND c.id_category != 1
+                          ORDER BY cl.name ASC';
+        $categories_data = Db::getInstance()->executeS($sql_categories);
+
+        if ($categories_data) {
+            foreach ($categories_data as $cat) {
+                $categories_list[] = [
+                    'id' => $cat['id_category'],
+                    'name' => $cat['name']
+                ];
             }
         }
 
-        $manufacturers = Manufacturer::getManufacturers(false, $default_lang);
+        // Get manufacturers using direct SQL query
         $manufacturers_list = [['id_manufacturer' => '', 'name' => $this->l('-- All Manufacturers --')]];
-        $manufacturers_list = array_merge($manufacturers_list, $manufacturers);
+
+        $sql_manufacturers = 'SELECT m.id_manufacturer, m.name
+                             FROM ' . _DB_PREFIX_ . 'manufacturer m
+                             WHERE m.active = 1
+                             ORDER BY m.name ASC';
+        $manufacturers_data = Db::getInstance()->executeS($sql_manufacturers);
+
+        if ($manufacturers_data) {
+            foreach ($manufacturers_data as $man) {
+                $manufacturers_list[] = [
+                    'id_manufacturer' => $man['id_manufacturer'],
+                    'name' => $man['name']
+                ];
+            }
+        }
 
         $fields_form[0]['form'] = [
             'legend' => [
