@@ -295,30 +295,51 @@ class ExportSevi extends Module
         @mail($email_address, $subject, $message_body, $headers);
     }
 
+    private function getCategoriesTree($id_lang, $id_parent = 2, $level = 0, $max_level = 10)
+    {
+        $categories = [];
+
+        if ($level > $max_level) {
+            return $categories;
+        }
+
+        // Get categories for this parent
+        $sql = 'SELECT c.id_category, cl.name
+                FROM ' . _DB_PREFIX_ . 'category c
+                LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl ON (c.id_category = cl.id_category AND cl.id_lang = ' . (int)$id_lang . ')
+                WHERE c.id_parent = ' . (int)$id_parent . ' AND c.active = 1
+                ORDER BY cl.name ASC';
+
+        $results = Db::getInstance()->executeS($sql);
+
+        if ($results) {
+            foreach ($results as $cat) {
+                // Add indentation for hierarchy visualization
+                $indent = str_repeat('&nbsp;&nbsp;&nbsp;', $level);
+                $prefix = $level > 0 ? $indent . '└─ ' : '';
+
+                $categories[] = [
+                    'id' => $cat['id_category'],
+                    'name' => $prefix . $cat['name']
+                ];
+
+                // Recursively get children
+                $children = $this->getCategoriesTree($id_lang, $cat['id_category'], $level + 1, $max_level);
+                $categories = array_merge($categories, $children);
+            }
+        }
+
+        return $categories;
+    }
+
     public function displayForm()
     {
         // Get form values
         $default_lang = (int)Configuration::get('PS_LANG_DEFAULT');
 
-        // Get categories and manufacturers for selects
+        // Get categories tree for selects
         $categories_list = [['id' => '', 'name' => $this->l('-- All Categories --')]];
-
-        // Get categories using direct SQL query
-        $sql_categories = 'SELECT c.id_category, cl.name
-                          FROM ' . _DB_PREFIX_ . 'category c
-                          LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl ON (c.id_category = cl.id_category AND cl.id_lang = ' . (int)$default_lang . ')
-                          WHERE c.active = 1 AND c.id_category != 1
-                          ORDER BY cl.name ASC';
-        $categories_data = Db::getInstance()->executeS($sql_categories);
-
-        if ($categories_data) {
-            foreach ($categories_data as $cat) {
-                $categories_list[] = [
-                    'id' => $cat['id_category'],
-                    'name' => $cat['name']
-                ];
-            }
-        }
+        $categories_list = array_merge($categories_list, $this->getCategoriesTree($default_lang));
 
         // Get manufacturers using direct SQL query
         $manufacturers_list = [['id_manufacturer' => '', 'name' => $this->l('-- All Manufacturers --')]];
@@ -439,8 +460,9 @@ class ExportSevi extends Module
                 [
                     'type' => 'select',
                     'label' => $this->l('Categories'),
-                    'name' => 'EXPORTSEVI_FILTER_CATEGORY',
+                    'name' => 'EXPORTSEVI_FILTER_CATEGORY[]',
                     'multiple' => true,
+                    'size' => 15,
                     'options' => [
                         'query' => $categories_list,
                         'id' => 'id',
@@ -451,8 +473,9 @@ class ExportSevi extends Module
                 [
                     'type' => 'select',
                     'label' => $this->l('Manufacturers'),
-                    'name' => 'EXPORTSEVI_FILTER_MANUFACTURER',
+                    'name' => 'EXPORTSEVI_FILTER_MANUFACTURER[]',
                     'multiple' => true,
+                    'size' => 15,
                     'options' => [
                         'query' => $manufacturers_list,
                         'id' => 'id_manufacturer',
@@ -535,10 +558,10 @@ class ExportSevi extends Module
 
         // Convert comma-separated strings to arrays for multiselect
         $filter_categories = Configuration::get('EXPORTSEVI_FILTER_CATEGORY');
-        $helper->fields_value['EXPORTSEVI_FILTER_CATEGORY'] = $filter_categories ? explode(',', $filter_categories) : [];
+        $helper->fields_value['EXPORTSEVI_FILTER_CATEGORY[]'] = $filter_categories ? explode(',', $filter_categories) : [];
 
         $filter_manufacturers = Configuration::get('EXPORTSEVI_FILTER_MANUFACTURER');
-        $helper->fields_value['EXPORTSEVI_FILTER_MANUFACTURER'] = $filter_manufacturers ? explode(',', $filter_manufacturers) : [];
+        $helper->fields_value['EXPORTSEVI_FILTER_MANUFACTURER[]'] = $filter_manufacturers ? explode(',', $filter_manufacturers) : [];
 
         $helper->fields_value['EXPORTSEVI_FILTER_PRICE_MIN'] = Configuration::get('EXPORTSEVI_FILTER_PRICE_MIN');
         $helper->fields_value['EXPORTSEVI_FILTER_PRICE_MAX'] = Configuration::get('EXPORTSEVI_FILTER_PRICE_MAX');
@@ -551,13 +574,25 @@ class ExportSevi extends Module
         // Check if this is first configuration (no folder set yet)
         $is_first_config = !Configuration::get('EXPORTSEVI_FOLDER');
 
-        // Add CSS for collapsible panels
+        // Add CSS for collapsible panels and larger selects
         $form .= '<style>
         .panel-collapse { display: ' . ($is_first_config ? 'block' : 'none') . '; }
         .panel-collapse.in { display: block; }
         .panel-heading { cursor: pointer; }
         .panel-heading:hover { background: #f5f5f5; }
         .panel-heading .pull-right { margin-right: 10px; }
+
+        /* Make multiselect boxes larger and more readable */
+        select[name="EXPORTSEVI_FILTER_CATEGORY[]"],
+        select[name="EXPORTSEVI_FILTER_MANUFACTURER[]"] {
+            min-height: 350px !important;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        select[name="EXPORTSEVI_FILTER_CATEGORY[]"] option,
+        select[name="EXPORTSEVI_FILTER_MANUFACTURER[]"] option {
+            padding: 4px 8px;
+        }
         </style>';
 
         // Add JavaScript to make panels collapsible
@@ -588,8 +623,40 @@ class ExportSevi extends Module
                     }
                 });
 
-                // Collapse all except first on load (if not first config)
-                ' . ($is_first_config ? '' : 'if (index > 0) { panelBody.style.display = "none"; }') . '
+                // Collapse all on load (if not first config)
+                ' . ($is_first_config ? '' : 'panelBody.style.display = "none";') . '
+            });
+
+            // Make panels with .panel-heading collapsible (Folder Browser, Export Actions, History)
+            var panelHeadings = document.querySelectorAll(".panel-heading");
+            panelHeadings.forEach(function(heading, index) {
+                var panel = heading.closest(".panel");
+                if (!panel) return;
+
+                // Skip if it already has a legend (already handled above)
+                if (panel.querySelector("legend")) return;
+
+                var panelBody = panel.querySelector(".form-wrapper") || panel.querySelector(".panel-body");
+                if (!panelBody) return;
+
+                // Add collapse toggle icon
+                heading.style.cursor = "pointer";
+                heading.innerHTML = \'<span class="pull-right" style="margin-right: 10px;"><i class="icon-chevron-' . ($is_first_config ? 'down' : 'right') . '"></i></span>\' + heading.innerHTML;
+
+                // Toggle on click
+                heading.addEventListener("click", function() {
+                    var icon = this.querySelector("i");
+                    if (panelBody.style.display === "none") {
+                        panelBody.style.display = "block";
+                        icon.className = "icon-chevron-down";
+                    } else {
+                        panelBody.style.display = "none";
+                        icon.className = "icon-chevron-right";
+                    }
+                });
+
+                // Collapse all on load (if not first config)
+                ' . ($is_first_config ? '' : 'panelBody.style.display = "none";') . '
             });
         });
         </script>';
