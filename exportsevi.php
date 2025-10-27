@@ -748,19 +748,6 @@ class ExportSevi extends Module
         $form .= '<div class="panel-heading"><i class="icon-play-circle"></i> ' . $this->l('Export Actions') . '</div>';
         $form .= '<div class="form-wrapper">';
 
-        // Get last successful export info
-        $last_export_sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'exportsevi_log` WHERE status = \'success\' ORDER BY export_date DESC LIMIT 1';
-        $last_export = Db::getInstance()->getRow($last_export_sql);
-
-        if ($last_export) {
-            $form .= '<div class="alert alert-info" style="margin-bottom: 15px;">';
-            $form .= '<strong><i class="icon-clock-o"></i> ' . $this->l('Last successful export:') . '</strong> ';
-            $form .= htmlspecialchars($last_export['export_date']) . ' - ';
-            $form .= '<strong>' . (int)$last_export['products_count'] . '</strong> ' . $this->l('products');
-            $form .= ' <span class="badge badge-' . ($last_export['export_type'] === 'manual' ? 'info' : 'default') . '">' . htmlspecialchars($last_export['export_type']) . '</span>';
-            $form .= '</div>';
-        }
-
         $form .= '<form method="post" action="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '">';
         $form .= '<div class="form-group">';
         $form .= '<button type="button" id="preview-btn" class="btn btn-info btn-lg" onclick="showPreview()" title="' . $this->l('Preview first 10 products before exporting') . '">';
