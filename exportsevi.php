@@ -1206,9 +1206,9 @@ class ExportSevi extends Module
     private function getProductsData()
     {
         $results = [];
-        $seen_references = []; // Anti-duplicates control
         $context = Context::getContext();
         $id_lang = $context->language->id;
+        $id_shop = (int)$context->shop->id;
         $product_status = Configuration::get('EXPORTSEVI_PRODUCT_STATUS') ?: 'active';
 
         // Build WHERE clause for product status
@@ -1271,8 +1271,8 @@ class ExportSevi extends Module
                     pl.name as product_name,
                     sa.quantity as stock
                 FROM ' . _DB_PREFIX_ . 'product p
-                LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ')
-                LEFT JOIN ' . _DB_PREFIX_ . 'stock_available sa ON (p.id_product = sa.id_product AND sa.id_product_attribute = 0)
+                LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ' AND pl.id_shop = ' . (int)$id_shop . ')
+                LEFT JOIN ' . _DB_PREFIX_ . 'stock_available sa ON (p.id_product = sa.id_product AND sa.id_product_attribute = 0 AND sa.id_shop = ' . (int)$id_shop . ')
                 WHERE 1=1 ' . $status_where . $filters_sql . '
                 AND NOT EXISTS (
                     SELECT 1 FROM ' . _DB_PREFIX_ . 'product_attribute pa
@@ -1284,13 +1284,6 @@ class ExportSevi extends Module
 
         if ($simple_data) {
             foreach ($simple_data as $row) {
-                // Skip if already processed (anti-duplicates)
-                $unique_key = $row['product_reference'] . '|' . $row['product_reference'];
-                if (isset($seen_references[$unique_key])) {
-                    continue;
-                }
-                $seen_references[$unique_key] = true;
-
                 $results[] = [
                     'ref_completa' => $row['product_reference'],
                     'ref_filtrada' => $row['product_reference'],
@@ -1306,7 +1299,7 @@ class ExportSevi extends Module
                     p.reference as product_reference,
                     pl.name as product_name
                 FROM ' . _DB_PREFIX_ . 'product p
-                LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ')
+                LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ' AND pl.id_shop = ' . (int)$id_shop . ')
                 WHERE 1=1 ' . $status_where . $filters_sql . '
                 AND EXISTS (
                     SELECT 1 FROM ' . _DB_PREFIX_ . 'product_attribute pa
@@ -1324,7 +1317,7 @@ class ExportSevi extends Module
                             sa.quantity as stock,
                             GROUP_CONCAT(CONCAT(agl.name, ": ", al.name) ORDER BY a.id_attribute_group, a.position SEPARATOR " - ") as attributes
                         FROM ' . _DB_PREFIX_ . 'product_attribute pa
-                        LEFT JOIN ' . _DB_PREFIX_ . 'stock_available sa ON (pa.id_product = sa.id_product AND pa.id_product_attribute = sa.id_product_attribute)
+                        LEFT JOIN ' . _DB_PREFIX_ . 'stock_available sa ON (pa.id_product = sa.id_product AND pa.id_product_attribute = sa.id_product_attribute AND sa.id_shop = ' . (int)$id_shop . ')
                         LEFT JOIN ' . _DB_PREFIX_ . 'product_attribute_combination pac ON pa.id_product_attribute = pac.id_product_attribute
                         LEFT JOIN ' . _DB_PREFIX_ . 'attribute a ON pac.id_attribute = a.id_attribute
                         LEFT JOIN ' . _DB_PREFIX_ . 'attribute_lang al ON (a.id_attribute = al.id_attribute AND al.id_lang = ' . (int)$id_lang . ')
@@ -1337,13 +1330,6 @@ class ExportSevi extends Module
 
                 if ($combinations_data) {
                     foreach ($combinations_data as $comb) {
-                        // Skip if already processed (anti-duplicates)
-                        $unique_key = $row['product_reference'] . '|' . $comb['combination_reference'];
-                        if (isset($seen_references[$unique_key])) {
-                            continue;
-                        }
-                        $seen_references[$unique_key] = true;
-
                         $combination_name = $row['product_name'];
                         if (!empty($comb['attributes'])) {
                             $combination_name .= ' - ' . $comb['attributes'];
