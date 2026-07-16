@@ -1206,6 +1206,7 @@ class ExportSevi extends Module
     private function getProductsData()
     {
         $results = [];
+        $seen_references = []; // Anti-duplicates control
         $context = Context::getContext();
         $id_lang = $context->language->id;
         $product_status = Configuration::get('EXPORTSEVI_PRODUCT_STATUS') ?: 'active';
@@ -1283,6 +1284,13 @@ class ExportSevi extends Module
 
         if ($simple_data) {
             foreach ($simple_data as $row) {
+                // Skip if already processed (anti-duplicates)
+                $unique_key = $row['product_reference'] . '|' . $row['product_reference'];
+                if (isset($seen_references[$unique_key])) {
+                    continue;
+                }
+                $seen_references[$unique_key] = true;
+
                 $results[] = [
                     'ref_completa' => $row['product_reference'],
                     'ref_filtrada' => $row['product_reference'],
@@ -1329,6 +1337,13 @@ class ExportSevi extends Module
 
                 if ($combinations_data) {
                     foreach ($combinations_data as $comb) {
+                        // Skip if already processed (anti-duplicates)
+                        $unique_key = $row['product_reference'] . '|' . $comb['combination_reference'];
+                        if (isset($seen_references[$unique_key])) {
+                            continue;
+                        }
+                        $seen_references[$unique_key] = true;
+
                         $combination_name = $row['product_name'];
                         if (!empty($comb['attributes'])) {
                             $combination_name .= ' - ' . $comb['attributes'];
