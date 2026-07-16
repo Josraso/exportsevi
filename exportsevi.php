@@ -1265,7 +1265,7 @@ class ExportSevi extends Module
         Db::getInstance()->execute('SET SESSION group_concat_max_len = 10000');
 
         // Get ONLY products WITHOUT combinations (simple products)
-        // FORCE one record per product using GROUP BY
+        // GROUP BY reference to handle legacy multistore data where same reference has multiple id_product
         $simple_sql = 'SELECT
                     p.reference as product_reference,
                     MAX(pl.name) as product_name,
@@ -1280,8 +1280,8 @@ class ExportSevi extends Module
                     WHERE pa.id_product = sa.id_product
                 )
                 ' . $status_where . $filters_sql . '
-                GROUP BY p.id_product, p.reference
-                ORDER BY p.id_product';
+                GROUP BY p.reference
+                ORDER BY p.reference';
 
         $simple_data = Db::getInstance()->executeS($simple_sql);
 
@@ -1297,14 +1297,14 @@ class ExportSevi extends Module
         }
 
         // Get ONLY combinations (id_product_attribute > 0), NOT parent products
-        // FORCE one record per combination using GROUP BY with id_product AND id_product_attribute
+        // GROUP BY parent reference and combination reference to handle legacy multistore data
         $combinations_sql = 'SELECT
                     p.reference as product_reference,
                     MAX(pl.name) as product_name,
-                    MAX(pa.reference) as combination_reference,
+                    pa.reference as combination_reference,
                     MAX(sa.quantity) as stock,
-                    sa.id_product_attribute,
-                    GROUP_CONCAT(DISTINCT CONCAT(agl.name, ": ", al.name) ORDER BY a.id_attribute_group, a.position SEPARATOR " - ") as attributes
+                    MAX(sa.id_product_attribute) as id_product_attribute,
+                    MAX(GROUP_CONCAT(DISTINCT CONCAT(agl.name, ": ", al.name) ORDER BY a.id_attribute_group, a.position SEPARATOR " - ")) as attributes
                 FROM ' . _DB_PREFIX_ . 'stock_available sa
                 INNER JOIN ' . _DB_PREFIX_ . 'product p ON (sa.id_product = p.id_product)
                 LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ')
@@ -1316,8 +1316,8 @@ class ExportSevi extends Module
                 WHERE sa.id_shop IN (0, ' . (int)$id_shop . ')
                 AND sa.id_product_attribute > 0
                 ' . $status_where . $filters_sql . '
-                GROUP BY p.id_product, sa.id_product_attribute, p.reference
-                ORDER BY p.id_product, sa.id_product_attribute';
+                GROUP BY p.reference, pa.reference
+                ORDER BY p.reference, pa.reference';
 
         $combinations_data = Db::getInstance()->executeS($combinations_sql);
 
