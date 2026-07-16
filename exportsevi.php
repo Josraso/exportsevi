@@ -1265,20 +1265,22 @@ class ExportSevi extends Module
         Db::getInstance()->execute('SET SESSION group_concat_max_len = 10000');
 
         // Get ONLY products WITHOUT combinations (simple products)
-        $simple_sql = 'SELECT DISTINCT
+        // FORCE one record per product using GROUP BY
+        $simple_sql = 'SELECT
                     p.reference as product_reference,
-                    pl.name as product_name,
-                    sa.quantity as stock
+                    MAX(pl.name) as product_name,
+                    MAX(sa.quantity) as stock
                 FROM ' . _DB_PREFIX_ . 'stock_available sa
                 INNER JOIN ' . _DB_PREFIX_ . 'product p ON (sa.id_product = p.id_product)
                 LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ')
-                WHERE sa.id_shop = ' . (int)$id_shop . '
+                WHERE sa.id_shop IN (0, ' . (int)$id_shop . ')
                 AND sa.id_product_attribute = 0
                 AND NOT EXISTS (
                     SELECT 1 FROM ' . _DB_PREFIX_ . 'product_attribute pa
                     WHERE pa.id_product = sa.id_product
                 )
                 ' . $status_where . $filters_sql . '
+                GROUP BY p.id_product, p.reference
                 ORDER BY p.id_product';
 
         $simple_data = Db::getInstance()->executeS($simple_sql);
@@ -1295,13 +1297,14 @@ class ExportSevi extends Module
         }
 
         // Get ONLY combinations (id_product_attribute > 0), NOT parent products
-        $combinations_sql = 'SELECT DISTINCT
+        // FORCE one record per combination using GROUP BY with id_product AND id_product_attribute
+        $combinations_sql = 'SELECT
                     p.reference as product_reference,
-                    pl.name as product_name,
-                    pa.reference as combination_reference,
-                    sa.quantity as stock,
+                    MAX(pl.name) as product_name,
+                    MAX(pa.reference) as combination_reference,
+                    MAX(sa.quantity) as stock,
                     sa.id_product_attribute,
-                    GROUP_CONCAT(CONCAT(agl.name, ": ", al.name) ORDER BY a.id_attribute_group, a.position SEPARATOR " - ") as attributes
+                    GROUP_CONCAT(DISTINCT CONCAT(agl.name, ": ", al.name) ORDER BY a.id_attribute_group, a.position SEPARATOR " - ") as attributes
                 FROM ' . _DB_PREFIX_ . 'stock_available sa
                 INNER JOIN ' . _DB_PREFIX_ . 'product p ON (sa.id_product = p.id_product)
                 LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ')
@@ -1310,10 +1313,10 @@ class ExportSevi extends Module
                 LEFT JOIN ' . _DB_PREFIX_ . 'attribute a ON pac.id_attribute = a.id_attribute
                 LEFT JOIN ' . _DB_PREFIX_ . 'attribute_lang al ON (a.id_attribute = al.id_attribute AND al.id_lang = ' . (int)$id_lang . ')
                 LEFT JOIN ' . _DB_PREFIX_ . 'attribute_group_lang agl ON (a.id_attribute_group = agl.id_attribute_group AND agl.id_lang = ' . (int)$id_lang . ')
-                WHERE sa.id_shop = ' . (int)$id_shop . '
+                WHERE sa.id_shop IN (0, ' . (int)$id_shop . ')
                 AND sa.id_product_attribute > 0
                 ' . $status_where . $filters_sql . '
-                GROUP BY sa.id_product, sa.id_product_attribute
+                GROUP BY p.id_product, sa.id_product_attribute, p.reference
                 ORDER BY p.id_product, sa.id_product_attribute';
 
         $combinations_data = Db::getInstance()->executeS($combinations_sql);
