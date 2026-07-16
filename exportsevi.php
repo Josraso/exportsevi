@@ -1264,85 +1264,55 @@ class ExportSevi extends Module
         // Increase GROUP_CONCAT limit to avoid truncation
         Db::getInstance()->execute('SET SESSION group_concat_max_len = 10000');
 
-        // Get simple products (without combinations) - Export 1 line per product
-        $simple_products = 'SELECT
-                    p.id_product,
+        // NEW APPROACH: Single query from stock_available to avoid duplicates
+        // This gets ALL stock records (products and combinations) in one go
+        $sql = 'SELECT DISTINCT
                     p.reference as product_reference,
                     pl.name as product_name,
-                    sa.quantity as stock
-                FROM ' . _DB_PREFIX_ . 'product p
-                LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ' AND pl.id_shop = ' . (int)$id_shop . ')
-                LEFT JOIN ' . _DB_PREFIX_ . 'stock_available sa ON (p.id_product = sa.id_product AND sa.id_product_attribute = 0 AND sa.id_shop = ' . (int)$id_shop . ')
-                WHERE 1=1 ' . $status_where . $filters_sql . '
-                AND NOT EXISTS (
-                    SELECT 1 FROM ' . _DB_PREFIX_ . 'product_attribute pa
-                    WHERE pa.id_product = p.id_product
-                )
-                ORDER BY p.id_product';
+                    sa.id_product_attribute,
+                    sa.quantity as stock,
+                    pa.reference as combination_reference,
+                    GROUP_CONCAT(CONCAT(agl.name, ": ", al.name) ORDER BY a.id_attribute_group, a.position SEPARATOR " - ") as attributes
+                FROM ' . _DB_PREFIX_ . 'stock_available sa
+                INNER JOIN ' . _DB_PREFIX_ . 'product p ON (sa.id_product = p.id_product)
+                LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ')
+                LEFT JOIN ' . _DB_PREFIX_ . 'product_attribute pa ON (sa.id_product_attribute = pa.id_product_attribute AND sa.id_product = pa.id_product)
+                LEFT JOIN ' . _DB_PREFIX_ . 'product_attribute_combination pac ON pa.id_product_attribute = pac.id_product_attribute
+                LEFT JOIN ' . _DB_PREFIX_ . 'attribute a ON pac.id_attribute = a.id_attribute
+                LEFT JOIN ' . _DB_PREFIX_ . 'attribute_lang al ON (a.id_attribute = al.id_attribute AND al.id_lang = ' . (int)$id_lang . ')
+                LEFT JOIN ' . _DB_PREFIX_ . 'attribute_group_lang agl ON (a.id_attribute_group = agl.id_attribute_group AND agl.id_lang = ' . (int)$id_lang . ')
+                WHERE sa.id_shop = ' . (int)$id_shop . '
+                ' . $status_where . $filters_sql . '
+                GROUP BY sa.id_product, sa.id_product_attribute
+                ORDER BY p.id_product, sa.id_product_attribute';
 
-        $simple_data = Db::getInstance()->executeS($simple_products);
+        $data = Db::getInstance()->executeS($sql);
 
-        if ($simple_data) {
-            foreach ($simple_data as $row) {
-                $results[] = [
-                    'ref_completa' => $row['product_reference'],
-                    'ref_filtrada' => $row['product_reference'],
-                    'nombre' => $row['product_name'],
-                    'stock' => (int)$row['stock']
-                ];
-            }
-        }
-
-        // Get products with combinations - Export ONLY combinations (NOT parent)
-        $products_with_combinations = 'SELECT DISTINCT
-                    p.id_product,
-                    p.reference as product_reference,
-                    pl.name as product_name
-                FROM ' . _DB_PREFIX_ . 'product p
-                LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ' AND pl.id_shop = ' . (int)$id_shop . ')
-                WHERE 1=1 ' . $status_where . $filters_sql . '
-                AND EXISTS (
-                    SELECT 1 FROM ' . _DB_PREFIX_ . 'product_attribute pa
-                    WHERE pa.id_product = p.id_product
-                )
-                ORDER BY p.id_product';
-
-        $parent_data = Db::getInstance()->executeS($products_with_combinations);
-
-        if ($parent_data) {
-            foreach ($parent_data as $row) {
-                // Get all combinations for this product
-                $combinations_sql = 'SELECT
-                            pa.reference as combination_reference,
-                            sa.quantity as stock,
-                            GROUP_CONCAT(CONCAT(agl.name, ": ", al.name) ORDER BY a.id_attribute_group, a.position SEPARATOR " - ") as attributes
-                        FROM ' . _DB_PREFIX_ . 'product_attribute pa
-                        LEFT JOIN ' . _DB_PREFIX_ . 'stock_available sa ON (pa.id_product = sa.id_product AND pa.id_product_attribute = sa.id_product_attribute AND sa.id_shop = ' . (int)$id_shop . ')
-                        LEFT JOIN ' . _DB_PREFIX_ . 'product_attribute_combination pac ON pa.id_product_attribute = pac.id_product_attribute
-                        LEFT JOIN ' . _DB_PREFIX_ . 'attribute a ON pac.id_attribute = a.id_attribute
-                        LEFT JOIN ' . _DB_PREFIX_ . 'attribute_lang al ON (a.id_attribute = al.id_attribute AND al.id_lang = ' . (int)$id_lang . ')
-                        LEFT JOIN ' . _DB_PREFIX_ . 'attribute_group_lang agl ON (a.id_attribute_group = agl.id_attribute_group AND agl.id_lang = ' . (int)$id_lang . ')
-                        WHERE pa.id_product = ' . (int)$row['id_product'] . '
-                        GROUP BY pa.id_product_attribute
-                        ORDER BY pa.id_product_attribute';
-
-                $combinations_data = Db::getInstance()->executeS($combinations_sql);
-
-                if ($combinations_data) {
-                    foreach ($combinations_data as $comb) {
-                        $combination_name = $row['product_name'];
-                        if (!empty($comb['attributes'])) {
-                            $combination_name .= ' - ' . $comb['attributes'];
-                        }
-
-                        // Export ONLY combinations (NOT parent product)
-                        $results[] = [
-                            'ref_completa' => $row['product_reference'], // Parent reference
-                            'ref_filtrada' => $comb['combination_reference'], // Combination reference
-                            'nombre' => $combination_name,
-                            'stock' => (int)$comb['stock']
-                        ];
+        if ($data) {
+            foreach ($data as $row) {
+                // If id_product_attribute = 0, it's a simple product
+                // If id_product_attribute > 0, it's a combination
+                if ($row['id_product_attribute'] == 0) {
+                    // Simple product (no combinations)
+                    $results[] = [
+                        'ref_completa' => $row['product_reference'],
+                        'ref_filtrada' => $row['product_reference'],
+                        'nombre' => $row['product_name'],
+                        'stock' => (int)$row['stock']
+                    ];
+                } else {
+                    // Product with combination - export ONLY the combination
+                    $combination_name = $row['product_name'];
+                    if (!empty($row['attributes'])) {
+                        $combination_name .= ' - ' . $row['attributes'];
                     }
+
+                    $results[] = [
+                        'ref_completa' => $row['product_reference'], // Parent reference
+                        'ref_filtrada' => $row['combination_reference'], // Combination reference
+                        'nombre' => $combination_name,
+                        'stock' => (int)$row['stock']
+                    ];
                 }
             }
         }
