@@ -1304,7 +1304,7 @@ class ExportSevi extends Module
                     pa.reference as combination_reference,
                     MAX(sa.quantity) as stock,
                     MAX(sa.id_product_attribute) as id_product_attribute,
-                    MAX(GROUP_CONCAT(DISTINCT CONCAT(agl.name, ": ", al.name) ORDER BY a.id_attribute_group, a.position SEPARATOR " - ")) as attributes
+                    GROUP_CONCAT(DISTINCT CONCAT(agl.name, ": ", al.name) ORDER BY a.id_attribute_group, a.position SEPARATOR " - ") as attributes
                 FROM ' . _DB_PREFIX_ . 'stock_available sa
                 INNER JOIN ' . _DB_PREFIX_ . 'product p ON (sa.id_product = p.id_product)
                 LEFT JOIN ' . _DB_PREFIX_ . 'product_lang pl ON (p.id_product = pl.id_product AND pl.id_lang = ' . (int)$id_lang . ')
