@@ -1,6 +1,7 @@
 <?php
 /**
- * 1.0.1: se quita un hook que no se usaba.
+ * 1.0.1: creates the history table and the missing settings (security token included) when the module was
+ * updated by uploading files over an older version.
  *
  * @author    Josra
  * @copyright Josra
@@ -12,9 +13,5 @@ if (!defined('_PS_VERSION_')) {
 
 function upgrade_module_1_0_1($module)
 {
-    if ($module->isRegisteredInHook('actionAdminControllerSetMedia')) {
-        $module->unregisterHook('actionAdminControllerSetMedia');
-    }
-
-    return true;
+    return $module->installTable() && $module->setDefaults();
 }
