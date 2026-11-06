@@ -1,10 +1,11 @@
 <?php
 /**
- * ExportSevi Module
- * Export products with references and stock to CSV
- * 
- * @author Tu Nombre
- * @version 1.0.0
+ * Export Sevi
+ * Exporta referencias y stock de los productos a un CSV, a mano o por cron.
+ *
+ * @author    Josra
+ * @copyright Josra
+ * @license   Uso privado
  */
 
 if (!defined('_PS_VERSION_')) {
@@ -17,8 +18,8 @@ class ExportSevi extends Module
     {
         $this->name = 'exportsevi';
         $this->tab = 'administration';
-        $this->version = '1.0.0';
-        $this->author = 'Tu Nombre';
+        $this->version = '1.0.1';
+        $this->author = 'Josra';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = [
             'min' => '1.6',
@@ -29,13 +30,12 @@ class ExportSevi extends Module
         parent::__construct();
 
         $this->displayName = $this->l('Export Sevi');
-        $this->description = $this->l('Export product references and stock to CSV file with cron support');
+        $this->description = $this->l('Exporta referencias y stock de los productos a un CSV, a mano o por cron.');
     }
 
     public function install()
     {
         return parent::install() &&
-            $this->registerHook('actionAdminControllerSetMedia') &&
             Configuration::updateValue('EXPORTSEVI_FOLDER', _PS_ROOT_DIR_ . '/exports/') &&
             Configuration::updateValue('EXPORTSEVI_FILENAME', 'productos_stock.csv') &&
             Configuration::updateValue('EXPORTSEVI_PRODUCT_STATUS', 'active');
@@ -43,28 +43,51 @@ class ExportSevi extends Module
 
     public function uninstall()
     {
-        return parent::uninstall() &&
-            Configuration::deleteByName('EXPORTSEVI_FOLDER') &&
-            Configuration::deleteByName('EXPORTSEVI_FILENAME') &&
-            Configuration::deleteByName('EXPORTSEVI_PRODUCT_STATUS');
+        Configuration::deleteByName('EXPORTSEVI_FOLDER');
+        Configuration::deleteByName('EXPORTSEVI_FILENAME');
+        Configuration::deleteByName('EXPORTSEVI_PRODUCT_STATUS');
+
+        return parent::uninstall();
+    }
+
+    /**
+     * URL completa de la configuración del módulo. En PrestaShop 8/9 la configuración va por ruta Symfony
+     * (index.php/improve/modules/...): una dirección relativa como AdminController::$currentIndex se resuelve
+     * contra esa ruta y el servidor (nginx de Plesk) devuelve «Not Found» al guardar.
+     */
+    protected function baseUrl()
+    {
+        $params = ['configure' => $this->name, 'tab_module' => $this->tab, 'module_name' => $this->name];
+        if (version_compare(_PS_VERSION_, '1.7.5.0', '>=')) {
+            $url = $this->context->link->getAdminLink('AdminModules', true, [], $params);
+        } else {
+            $url = $this->context->link->getAdminLink('AdminModules', true);
+        }
+        if (strpos($url, 'configure=') === false && strpos($url, '/configure/') === false) {
+            $url .= (strpos($url, '?') === false ? '?' : '&') . http_build_query($params);
+        }
+
+        return $url;
     }
 
     public function getContent()
     {
-        $output = null;
+        $output = '';
 
         if (Tools::isSubmit('submit' . $this->name)) {
             $folder = strval(Tools::getValue('EXPORTSEVI_FOLDER'));
             $filename = strval(Tools::getValue('EXPORTSEVI_FILENAME'));
             $product_status = strval(Tools::getValue('EXPORTSEVI_PRODUCT_STATUS'));
 
-            if (!$folder || empty($folder) || !$filename || empty($filename)) {
-                $output .= $this->displayError($this->l('Invalid Configuration value'));
+            if (trim($folder) === '' || trim($filename) === '') {
+                $output .= $this->displayError($this->l('No se ha guardado: la carpeta y el nombre del archivo son obligatorios.'));
+            } elseif (!preg_match('/^[A-Za-z0-9._-]+$/', $filename)) {
+                $output .= $this->displayError($this->l('No se ha guardado: el nombre del archivo solo puede llevar letras, números, puntos, guiones y guiones bajos (sin carpetas).'));
             } else {
                 Configuration::updateValue('EXPORTSEVI_FOLDER', $folder);
                 Configuration::updateValue('EXPORTSEVI_FILENAME', $filename);
                 Configuration::updateValue('EXPORTSEVI_PRODUCT_STATUS', $product_status);
-                $output .= $this->displayConfirmation($this->l('Settings updated'));
+                $output .= $this->displayConfirmation($this->l('Configuración guardada.'));
             }
         }
 
@@ -72,9 +95,9 @@ class ExportSevi extends Module
         if (Tools::isSubmit('export_now')) {
             $result = $this->executeExport();
             if ($result['success']) {
-                $output .= $this->displayConfirmation($this->l('Export completed: ') . $result['message']);
+                $output .= $this->displayConfirmation($this->l('Exportación hecha: ') . $result['message']);
             } else {
-                $output .= $this->displayError($this->l('Export failed: ') . $result['message']);
+                $output .= $this->displayError($this->l('No se ha podido exportar: ') . $result['message']);
             }
         }
 
@@ -88,33 +111,34 @@ class ExportSevi extends Module
 
         $fields_form[0]['form'] = [
             'legend' => [
-                'title' => $this->l('Settings'),
+                'title' => $this->l('Configuración'),
+                'icon' => 'icon-cogs',
             ],
             'input' => [
                 [
                     'type' => 'text',
-                    'label' => $this->l('Destination Folder'),
+                    'label' => $this->l('Carpeta de destino'),
                     'name' => 'EXPORTSEVI_FOLDER',
                     'required' => true,
-                    'desc' => $this->l('Full server path (e.g., /var/www/exports/ or /home/user/exports/)'),
+                    'desc' => $this->l('Ruta completa en el servidor (p. ej. /var/www/vhosts/tienda.com/exports/). Se puede elegir abajo, en «Carpetas».'),
                     'class' => 'fixed-width-xxl'
                 ],
                 [
                     'type' => 'text',
-                    'label' => $this->l('File Name'),
+                    'label' => $this->l('Nombre del archivo'),
                     'name' => 'EXPORTSEVI_FILENAME',
                     'required' => true,
-                    'desc' => $this->l('Include .csv extension (e.g., productos.csv)')
+                    'desc' => $this->l('Con la extensión .csv (p. ej. productos_stock.csv). Se sobrescribe en cada exportación.')
                 ],
                 [
                     'type' => 'select',
-                    'label' => $this->l('Product Status'),
+                    'label' => $this->l('Productos'),
                     'name' => 'EXPORTSEVI_PRODUCT_STATUS',
                     'options' => [
                         'query' => [
-                            ['id' => 'all', 'name' => $this->l('All Products')],
-                            ['id' => 'active', 'name' => $this->l('Only Active Products')],
-                            ['id' => 'inactive', 'name' => $this->l('Only Inactive Products')]
+                            ['id' => 'all', 'name' => $this->l('Todos')],
+                            ['id' => 'active', 'name' => $this->l('Solo activos')],
+                            ['id' => 'inactive', 'name' => $this->l('Solo desactivados')]
                         ],
                         'id' => 'id',
                         'name' => 'name'
@@ -122,7 +146,7 @@ class ExportSevi extends Module
                 ]
             ],
             'submit' => [
-                'title' => $this->l('Save'),
+                'title' => $this->l('Guardar'),
                 'class' => 'btn btn-default pull-right'
             ]
         ];
@@ -131,12 +155,11 @@ class ExportSevi extends Module
         $helper->module = $this;
         $helper->name_controller = $this->name;
         $helper->token = Tools::getAdminTokenLite('AdminModules');
-        $helper->currentIndex = AdminController::$currentIndex . '&configure=' . $this->name;
+        $helper->currentIndex = $this->baseUrl(); // completa: la relativa da «Not Found» en PS 8/9
         $helper->default_form_language = $default_lang;
         $helper->allow_employee_form_lang = $default_lang;
         $helper->title = $this->displayName;
-        $helper->show_toolbar = true;
-        $helper->toolbar_scroll = true;
+        $helper->show_toolbar = false;
         $helper->submit_action = 'submit' . $this->name;
 
         $helper->fields_value['EXPORTSEVI_FOLDER'] = Configuration::get('EXPORTSEVI_FOLDER');
@@ -149,39 +172,40 @@ class ExportSevi extends Module
         $cron_url = _PS_BASE_URL_ . __PS_BASE_URI__ . 'modules/' . $this->name . '/export.php';
         
         $form .= '<div class="panel">';
-        $form .= '<div class="panel-heading"><i class="icon-folder"></i> ' . $this->l('Folder Browser') . '</div>';
+        $form .= '<div class="panel-heading"><i class="icon-folder"></i> ' . $this->l('Carpetas') . '</div>';
         $form .= '<div class="form-wrapper">';
         $form .= '<div id="folder-browser" style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #f8f8f8;">';
         $form .= $this->getFolderBrowser();
         $form .= '</div>';
-        $form .= '<p class="help-block">' . $this->l('Click on [+] to expand folders, click on folder names to select') . '</p>';
+        $form .= '<p class="help-block">' . $this->l('[+] abre la carpeta; pulsando el nombre se elige como destino. ✓ = se puede escribir, ✗ = no.') . '</p>';
         $form .= '</div></div>';
         
         $form .= '<div class="panel">';
-        $form .= '<div class="panel-heading"><i class="icon-cogs"></i> ' . $this->l('Export Actions') . '</div>';
+        $form .= '<div class="panel-heading"><i class="icon-cogs"></i> ' . $this->l('Exportar') . '</div>';
         $form .= '<div class="form-wrapper">';
-        $form .= '<form method="post" action="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '">';
+        $form .= '<form method="post" action="' . htmlspecialchars($this->baseUrl(), ENT_QUOTES, 'UTF-8') . '">';
         $form .= '<div class="form-group">';
         $form .= '<button type="submit" name="export_now" class="btn btn-primary btn-lg">';
-        $form .= '<i class="icon-download"></i> ' . $this->l('Export Now') . '</button>';
+        $form .= '<i class="icon-download"></i> ' . $this->l('Exportar ahora') . '</button>';
         $form .= '</div>';
         $form .= '</form>';
         $form .= '<div class="form-group">';
-        $form .= '<label>' . $this->l('Cron URL:') . '</label>';
-        $form .= '<input type="text" class="form-control" value="' . $cron_url . '" readonly onclick="this.select()">';
-        $form .= '<p class="help-block">' . $this->l('Use this URL in your cron job for automatic exports') . '</p>';
+        $form .= '<label>' . $this->l('URL para el cron') . '</label>';
+        $form .= '<input type="text" class="form-control" value="' . htmlspecialchars($cron_url, ENT_QUOTES, 'UTF-8') . '" readonly onclick="this.select()">';
+        $form .= '<p class="help-block">' . $this->l('En Plesk > Tareas programadas, «Obtener una URL» con esta dirección cada vez que quiera el archivo al día.') . '</p>';
         $form .= '</div>';
         $form .= '</div></div>';
 
         // Add JavaScript for collapsible folder browser
         $form .= '<script>
-        function selectFolder(path) {
+        function selectFolder(path, el) {
             document.getElementsByName("EXPORTSEVI_FOLDER")[0].value = path;
-            // Highlight selected folder
             var folders = document.querySelectorAll(".folder-name");
             folders.forEach(function(f) { f.style.backgroundColor = ""; f.style.fontWeight = ""; });
-            event.target.style.backgroundColor = "#e3f2fd";
-            event.target.style.fontWeight = "bold";
+            if (el) {
+                el.style.backgroundColor = "#e3f2fd";
+                el.style.fontWeight = "bold";
+            }
         }
 
         function toggleFolder(element) {
@@ -217,8 +241,7 @@ class ExportSevi extends Module
     {
         $html = '<div style="font-family: monospace;">';
         $html .= '<div style="margin-bottom: 15px; padding: 10px; background: #e8f4f8; border-left: 4px solid #2196F3;">';
-        $html .= '<strong><i class="icon-info"></i> PrestaShop Directory Structure</strong><br>';
-        $html .= '<small>Click on [+] to expand folders, click on folder names to select as destination</small>';
+        $html .= '<strong><i class="icon-info"></i> ' . $this->l('Carpetas de la tienda') . '</strong>';
         $html .= '</div>';
         
         $base_path = _PS_ROOT_DIR_;
@@ -241,7 +264,7 @@ class ExportSevi extends Module
         $style = is_writable($path) ? 'color: #4CAF50;' : 'color: #f44336;';
         $rel_path = str_replace(_PS_ROOT_DIR_, '', $path);
         $display_path = $rel_path ?: '/';
-        $folder_name = $level === 0 ? 'PrestaShop Root' : basename(rtrim($path, '/'));
+        $folder_name = $level === 0 ? $this->l('Raíz de la tienda') : htmlspecialchars(basename(rtrim($path, '/')), ENT_QUOTES, 'UTF-8');
 
         // Check if has subdirectories
         $has_subdirs = false;
@@ -269,7 +292,7 @@ class ExportSevi extends Module
         }
         
         $html .= $indent . '<span class="folder-name" style="cursor: pointer; padding: 2px 8px; ' . $style . ' border-radius: 3px;" 
-                  onclick="selectFolder(\'' . addslashes($path) . '\')" 
+                  onclick="selectFolder(\'' . htmlspecialchars(addslashes($path), ENT_QUOTES, 'UTF-8') . '\', this)" 
                   onmouseover="this.style.backgroundColor=\'#f0f8ff\'" 
                   onmouseout="if(this.style.fontWeight!=\'bold\') this.style.backgroundColor=\'\'">';
         
@@ -324,17 +347,17 @@ class ExportSevi extends Module
             
             // Create folder if it doesn't exist
             if (!is_dir($folder)) {
-                if (!mkdir($folder, 0755, true)) {
-                    return ['success' => false, 'message' => 'Cannot create folder: ' . $folder];
+                if (!@mkdir($folder, 0755, true)) {
+                    return ['success' => false, 'message' => 'no se puede crear la carpeta ' . $folder . ' (no existe y el usuario del servidor no tiene permiso para crearla).'];
                 }
             }
 
             $filepath = rtrim($folder, '/') . '/' . $filename;
 
             // Open file for writing
-            $file = fopen($filepath, 'w');
+            $file = @fopen($filepath, 'w');
             if (!$file) {
-                return ['success' => false, 'message' => 'Cannot create file: ' . $filepath];
+                return ['success' => false, 'message' => 'no se puede escribir ' . $filepath . ' (revise los permisos de la carpeta o si el archivo está abierto o bloqueado).'];
             }
 
             // Add BOM for Excel compatibility
@@ -364,10 +387,10 @@ class ExportSevi extends Module
             
             return [
                 'success' => true, 
-                'message' => count($products) . ' products exported to ' . $filepath
+                'message' => count($products) . ' filas en ' . $filepath
             ];
 
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             return ['success' => false, 'message' => $e->getMessage()];
         }
     }
