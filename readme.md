@@ -237,3 +237,6 @@ Para reportar problemas, incluir:
 ---
 
 **Desarrollado para exportaciones eficientes de stock entre tiendas PrestaShop** 🚀
+
+## 1.0.2
+- Conectado al servidor de actualizaciones de josra (aviso de la instalación, bloque «Actualizaciones» en la configuración y, en PrestaShop 8.1 o superior, la versión nueva en Gestor de módulos > Actualizaciones). Sin cambios en la exportación.

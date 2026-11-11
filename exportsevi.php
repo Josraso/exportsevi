@@ -12,13 +12,15 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
+require_once dirname(__FILE__) . '/classes/ExportseviUpdater.php';
+
 class ExportSevi extends Module
 {
     public function __construct()
     {
         $this->name = 'exportsevi';
         $this->tab = 'administration';
-        $this->version = '1.0.1';
+        $this->version = '1.0.2';
         $this->author = 'Josra';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = [
@@ -35,7 +37,7 @@ class ExportSevi extends Module
 
     public function install()
     {
-        return parent::install() && $this->installTable() && $this->setDefaults();
+        return parent::install() && $this->installTable() && $this->setDefaults() && $this->getUpdater()->registerHooks();
     }
 
     /** Valores por defecto que falten (no toca los que ya existen). También la usa la actualización. */
@@ -93,6 +95,11 @@ class ExportSevi extends Module
 
     public function uninstall()
     {
+        // Aviso al servidor de actualizaciones (no impide desinstalar si no responde)
+        $this->getUpdater()->notifyUninstall();
+        Configuration::deleteByName('EXPORTSEVI_UPD_TS');
+        Configuration::deleteByName('EXPORTSEVI_UPD_INFO');
+
         // Drop logs table
         $sql = 'DROP TABLE IF EXISTS `' . _DB_PREFIX_ . 'exportsevi_log`';
 
@@ -134,9 +141,27 @@ class ExportSevi extends Module
         return htmlspecialchars($this->baseUrl(), ENT_QUOTES, 'UTF-8');
     }
 
+    public function getUpdater()
+    {
+        return new ExportseviUpdater($this);
+    }
+
+    /** Aviso periódico al servidor de actualizaciones (solo en el back-office) */
+    public function hookActionAdminControllerSetMedia($params)
+    {
+        $this->getUpdater()->maybePing();
+    }
+
+    /** PS 8.1+: la versión nueva aparece en Gestor de módulos > Actualizaciones */
+    public function hookActionListModules($params)
+    {
+        return $this->getUpdater()->getNativeModuleList();
+    }
+
     public function getContent()
     {
-        $output = null;
+        $updater = $this->getUpdater();
+        $output = $updater->processRequest();
 
         // Handle file download
         if (Tools::isSubmit('download_export') && Tools::getValue('file')) {
@@ -224,7 +249,13 @@ class ExportSevi extends Module
             $output .= $this->displayConfirmation($this->l('Security token regenerated successfully'));
         }
 
-        return $output . $this->displayForm();
+        $info = $updater->getInfo();
+        $panel = $updater->renderPanel();
+        $forms = $this->displayForm();
+
+        return !empty($info['update_available'])
+            ? $output . $panel . $forms
+            : $output . $forms . $panel;
     }
 
     private function previewExport()
