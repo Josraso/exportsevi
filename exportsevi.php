@@ -20,7 +20,7 @@ class ExportSevi extends Module
     {
         $this->name = 'exportsevi';
         $this->tab = 'administration';
-        $this->version = '1.0.2';
+        $this->version = '1.0.3';
         $this->author = 'Josra';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = [
@@ -99,6 +99,8 @@ class ExportSevi extends Module
         $this->getUpdater()->notifyUninstall();
         Configuration::deleteByName('EXPORTSEVI_UPD_TS');
         Configuration::deleteByName('EXPORTSEVI_UPD_INFO');
+        Configuration::deleteByName('EXPORTSEVI_UPD_SU');
+        Configuration::deleteByName('EXPORTSEVI_UPD_LT');
 
         // Drop logs table
         $sql = 'DROP TABLE IF EXISTS `' . _DB_PREFIX_ . 'exportsevi_log`';
