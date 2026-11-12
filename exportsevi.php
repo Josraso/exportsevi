@@ -20,7 +20,7 @@ class ExportSevi extends Module
     {
         $this->name = 'exportsevi';
         $this->tab = 'administration';
-        $this->version = '1.0.4';
+        $this->version = '1.0.5';
         $this->author = 'Josra';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = [
