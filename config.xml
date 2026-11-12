@@ -2,7 +2,7 @@
 <module>
     <name>exportsevi</name>
     <displayName><![CDATA[Export Sevi]]></displayName>
-    <version><![CDATA[1.0.3]]></version>
+    <version><![CDATA[1.0.4]]></version>
     <description><![CDATA[Export product references and stock to CSV file with cron support]]></description>
     <author><![CDATA[Josra]]></author>
     <tab><![CDATA[administration]]></tab>

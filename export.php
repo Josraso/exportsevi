@@ -32,9 +32,10 @@ $respond = function ($code, $status, $message) {
     exit;
 };
 
-// Security check - only allow execution if module is installed
-if (!Module::isInstalled('exportsevi')) {
-    $respond(403, 'error', 'Module not installed');
+// Security check - only allow execution if module is installed and enabled
+// (desactivado, por ejemplo por no tener licencia, no exporta)
+if (!Module::isInstalled('exportsevi') || !Module::isEnabled('exportsevi')) {
+    $respond(403, 'error', 'Module not installed or disabled');
 }
 
 // Security check - validate token
